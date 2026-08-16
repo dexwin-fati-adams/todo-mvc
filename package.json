@@ -5,6 +5,17 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.67.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --build",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "test": "pnpm -r test"
   }
 }
