@@ -1,0 +1,13 @@
+"tag": "0000_create_todos_table",{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787056091333,
+      "tag": "0000_wealthy_miss_america",
+      "breakpoints": true
+    }
+  ]
+}
