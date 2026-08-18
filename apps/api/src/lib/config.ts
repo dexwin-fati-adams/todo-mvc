@@ -1,5 +1,8 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+import path from 'node:path';
 import { z } from 'zod';
+
+loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
 
 export type Config = typeof config;
 
@@ -9,7 +12,6 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 });
-
 
 const parsed = configSchema.parse(process.env);
 
