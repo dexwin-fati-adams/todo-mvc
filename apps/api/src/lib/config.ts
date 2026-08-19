@@ -1,18 +1,14 @@
-import { config as loadEnv } from 'dotenv';
-import path from 'node:path';
+import 'dotenv/config';
 import { z } from 'zod';
 
-loadEnv({ path: path.resolve(process.cwd(), '../../.env') });
-
-export type Config = typeof config;
 
 const configSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  PORT: z.coerce.number().default(3001),
-  HOST: z.string().default('0.0.0.0'),
-  CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  PORT: z.coerce.number(),
+  HOST: z.string(),
+  CORS_ORIGIN: z.string()
 });
-
+//if anything is wrong, crash immediately
 const parsed = configSchema.parse(process.env);
 
 export const config = {
@@ -21,3 +17,5 @@ export const config = {
   host: parsed.HOST,
   corsOrigin: parsed.CORS_ORIGIN,
 };
+
+export type Config = typeof config;
