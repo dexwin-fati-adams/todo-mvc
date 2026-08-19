@@ -5,6 +5,8 @@ export type TodoNotFoundError = { type: 'TODO_NOT_FOUND'; id: string };
 export type TodoEmptyTitleError = { type: 'TODO_EMPTY_TITLE' };
 export type TodoValidationError = { type: 'TODO_VALIDATION_ERROR'; message: string };
 export type TodoDbError = { type: 'TODO_DB_ERROR'; cause: unknown };
+
+//describes the possible errors.
 export type TodoError =
   | TodoNotFoundError
   | TodoEmptyTitleError
