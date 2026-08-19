@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 
 const configSchema = z.object({
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DATABASE_URL: z.string(),
   PORT: z.coerce.number(),
   HOST: z.string(),
   CORS_ORIGIN: z.string()
