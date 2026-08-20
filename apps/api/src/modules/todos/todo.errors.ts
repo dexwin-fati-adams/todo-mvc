@@ -12,7 +12,7 @@ export type TodoError =
   | TodoEmptyTitleError
   | TodoValidationError
   | TodoDbError;
-
+//gives you functions to create those errors.
 export const TodoErrors = {
   notFound: (id: string): TodoNotFoundError => ({ type: 'TODO_NOT_FOUND', id }),
   emptyTitle: (): TodoEmptyTitleError => ({ type: 'TODO_EMPTY_TITLE' }),
