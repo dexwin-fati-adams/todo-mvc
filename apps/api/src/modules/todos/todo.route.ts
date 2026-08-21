@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import {
   CreateTodoRequestSchema,
-
+  FilterQuerySchema,
+  TodoListResponseSchema,
   TodoSchema,
-
 } from 'contracts';
 import { match } from 'ts-pattern';
 import type { TodoService } from './todo.service.js';
@@ -74,6 +74,37 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       const result = await todoService.toggleAll();
       return match(toMatchable(result))
         .with({ ok: true }, () => reply.status(204).send())
+        .with({ ok: false }, ({ error }) => {
+          const { status, body } = toHttpError(error);
+          return reply.status(status).send(body);
+        })
+        .exhaustive();
+    },
+  );
+
+   fastify.get(
+    '/todos',
+    {},
+    async (request, reply) => {
+      //validates what comes in from the URL.
+      const query = FilterQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return reply.status(400).send({ error: 'VALIDATION_ERROR', message: formatZodIssues(query.error.issues) });
+      }
+
+      const result = await todoService.listTodos(query.data.filter);
+      return match(toMatchable(result))
+        .with({ ok: true }, ({ value }) =>
+          sendValidated({
+            schema: TodoListResponseSchema,
+            body: value,
+            status: 200,
+            reply,
+            request,
+            // It's just a label for logging. When sendValidated fails to validate the response, it logs the error like this:
+            context: 'todos/list/200',
+          }),
+        )
         .with({ ok: false }, ({ error }) => {
           const { status, body } = toHttpError(error);
           return reply.status(status).send(body);
