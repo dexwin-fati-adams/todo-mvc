@@ -1,18 +1,18 @@
-import { eq } from 'drizzle-orm';
-import { ResultAsync, err, ok } from 'neverthrow';
-import type { Db } from '@/lib/db.js';
-import { todosTable, type TodoDbRow } from '@/lib/schema.js';
-import { TodoErrors, type TodoDbError, type TodoNotFoundError } from './todo.errors.js';
+import { eq } from "drizzle-orm";
+import { ResultAsync, err, ok } from "neverthrow";
+import type { Db } from "@/lib/db.js";
+import { todosTable, type TodoDbRow } from "@/lib/schema.js";
+import { TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
 
 type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
-  findAll(filter: 'all' | 'active' | 'completed'): ResultAsync<TodoDbRow[], TodoDbError>;
+  findAll(filter: "all" | "active" | "completed"): ResultAsync<TodoDbRow[], TodoDbError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
-    patch: Partial<Pick<TodoDbRow, 'title' | 'completed'>>,
+    patch: Partial<Pick<TodoDbRow, "title" | "completed">>,
   ): ResultAsync<TodoDbRow, TodoUpdateError>;
   delete(id: string): ResultAsync<void, TodoDbError>;
   updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError>;
@@ -26,23 +26,23 @@ export function createTodoRepository(db: Db): TodoRepository {
         return make(newTx);
       },
 
-      findAll(filter: 'all' | 'active' | 'completed'): ResultAsync<TodoDbRow[], TodoDbError> {
+      findAll(filter: "all" | "active" | "completed"): ResultAsync<TodoDbRow[], TodoDbError> {
         return ResultAsync.fromPromise(
           (async () => {
             switch (filter) {
-              case 'active':
+              case "active":
                 return tx
                   .select()
                   .from(todosTable)
                   .where(eq(todosTable.completed, false))
                   .orderBy(todosTable.createdAt);
-              case 'completed':
+              case "completed":
                 return tx
                   .select()
                   .from(todosTable)
                   .where(eq(todosTable.completed, true))
                   .orderBy(todosTable.createdAt);
-              case 'all':
+              case "all":
                 return tx.select().from(todosTable).orderBy(todosTable.createdAt);
             }
           })(),
@@ -52,14 +52,18 @@ export function createTodoRepository(db: Db): TodoRepository {
 
       insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError> {
         return ResultAsync.fromPromise(
-          tx.insert(todosTable).values(row).returning().then((rows) => rows[0]!),
+          tx
+            .insert(todosTable)
+            .values(row)
+            .returning()
+            .then((rows) => rows[0]!),
           (cause) => TodoErrors.dbError(cause),
         );
       },
 
       update(
         id: string,
-        patch: Partial<Pick<TodoDbRow, 'title' | 'completed'>>,
+        patch: Partial<Pick<TodoDbRow, "title" | "completed">>,
       ): ResultAsync<TodoDbRow, TodoUpdateError> {
         return ResultAsync.fromPromise(
           tx.update(todosTable).set(patch).where(eq(todosTable.id, id)).returning(),
@@ -74,21 +78,30 @@ export function createTodoRepository(db: Db): TodoRepository {
 
       delete(id: string): ResultAsync<void, TodoDbError> {
         return ResultAsync.fromPromise(
-          tx.delete(todosTable).where(eq(todosTable.id, id)).then(() => undefined),
+          tx
+            .delete(todosTable)
+            .where(eq(todosTable.id, id))
+            .then(() => undefined),
           (cause) => TodoErrors.dbError(cause),
         );
       },
 
       updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError> {
         return ResultAsync.fromPromise(
-          tx.update(todosTable).set({ completed }).then(() => undefined),
+          tx
+            .update(todosTable)
+            .set({ completed })
+            .then(() => undefined),
           (cause) => TodoErrors.dbError(cause),
         );
       },
 
       deleteAllCompleted(): ResultAsync<void, TodoDbError> {
         return ResultAsync.fromPromise(
-          tx.delete(todosTable).where(eq(todosTable.completed, true)).then(() => undefined),
+          tx
+            .delete(todosTable)
+            .where(eq(todosTable.completed, true))
+            .then(() => undefined),
           (cause) => TodoErrors.dbError(cause),
         );
       },
@@ -97,4 +110,3 @@ export function createTodoRepository(db: Db): TodoRepository {
 
   return make(db);
 }
- 
