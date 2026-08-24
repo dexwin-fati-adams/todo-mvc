@@ -1,5 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { CreateTodoRequestSchema, TodoSchema } from "contracts";
+import {
+  CreateTodoRequestSchema,
+  FilterQuerySchema,
+  TodoIdParamSchema,
+  TodoListResponseSchema,
+  TodoSchema,
+  UpdateTodoRequestSchema,
+} from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
 import { toHttpError } from "./todo.errors.js";
@@ -59,6 +66,98 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
 
   fastify.post("/todos/toggle-all", {}, async (_req, reply) => {
     const result = await todoService.toggleAll();
+    return match(toMatchable(result))
+      .with({ ok: true }, () => reply.status(204).send())
+      .with({ ok: false }, ({ error }) => {
+        const { status, body } = toHttpError(error);
+        return reply.status(status).send(body);
+      })
+      .exhaustive();
+  });
+
+  fastify.get("/todos", {}, async (request, reply) => {
+    //validates what comes in from the URL.
+    const query = FilterQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
+    }
+
+    const result = await todoService.listTodos(query.data.filter);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        sendValidated({
+          schema: TodoListResponseSchema,
+          body: value,
+          status: 200,
+          reply,
+          request,
+          // It's just a label for logging. When sendValidated fails to validate the response, it logs the error like this:
+          context: "todos/list/200",
+        }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body } = toHttpError(error);
+        return reply.status(status).send(body);
+      })
+      .exhaustive();
+  });
+
+  fastify.patch("/todos/:id", {}, async (request, reply) => {
+    const params = TodoIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
+    }
+
+    const body = UpdateTodoRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
+    }
+
+    const result = await todoService.updateTodo(params.data.id, body.data);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        sendValidated({
+          schema: TodoSchema,
+          body: value,
+          status: 200,
+          reply,
+          request,
+          context: "todos/update/200",
+        }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
+      })
+      .exhaustive();
+  });
+
+  fastify.delete("/todos/completed", {}, async (_req, reply) => {
+    const result = await todoService.clearCompleted();
+    return match(toMatchable(result))
+      .with({ ok: true }, () => reply.status(204).send())
+      .with({ ok: false }, ({ error }) => {
+        const { status, body } = toHttpError(error);
+        return reply.status(status).send(body);
+      })
+      .exhaustive();
+  });
+
+  fastify.delete("/todos/:id", {}, async (request, reply) => {
+    const params = TodoIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
+    }
+
+    const result = await todoService.deleteTodo(params.data.id);
     return match(toMatchable(result))
       .with({ ok: true }, () => reply.status(204).send())
       .with({ ok: false }, ({ error }) => {
