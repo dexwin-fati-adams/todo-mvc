@@ -1,9 +1,9 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
-import type { ZodType } from 'zod';
+import type { FastifyReply, FastifyRequest } from "fastify";
+import type { ZodType } from "zod";
 
 const DEFAULT_SERVICE_UNAVAILABLE_FALLBACK = {
-  error: 'SERVICE_UNAVAILABLE' as const,
-  message: 'Service is temporarily unavailable. Please try again later.',
+  error: "SERVICE_UNAVAILABLE" as const,
+  message: "Service is temporarily unavailable. Please try again later.",
 };
 
 export function sendValidated<T>(options: {
@@ -13,7 +13,7 @@ export function sendValidated<T>(options: {
   reply: FastifyReply;
   request: FastifyRequest;
   context: string;
-  fallback?: { error: 'SERVICE_UNAVAILABLE'; message: string };
+  fallback?: { error: "SERVICE_UNAVAILABLE"; message: string };
 }) {
   const {
     schema,
@@ -27,7 +27,7 @@ export function sendValidated<T>(options: {
 
   const v = schema.safeParse(body);
   if (!v.success) {
-    request.log.error({ context, issues: v.error.issues }, 'response validation failed');
+    request.log.error({ context, issues: v.error.issues }, "response validation failed");
     return reply.status(503).send(fallback);
   }
 
@@ -41,6 +41,6 @@ export function sendServiceUnavailable<T>(options: {
   request: FastifyRequest;
   context: string;
 }) {
-  options.request.log.error({ context: options.context }, 'service unavailable');
+  options.request.log.error({ context: options.context }, "service unavailable");
   return sendValidated({ ...options, status: 503 });
 }

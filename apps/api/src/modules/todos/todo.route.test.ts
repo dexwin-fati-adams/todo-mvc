@@ -1,20 +1,20 @@
-import { describe, it, expect, vi,  } from 'vitest';
-import Fastify from 'fastify';
-import { ResultAsync, ok, err } from 'neverthrow';
-import { todoRoutes } from './todo.route.js';
-import { TodoErrors } from './todo.errors.js';
+import { describe, it, expect, vi } from "vitest";
+import Fastify from "fastify";
+import { ResultAsync, ok, err } from "neverthrow";
+import { todoRoutes } from "./todo.route.js";
+import { TodoErrors } from "./todo.errors.js";
 
-import type { TodoService } from './todo.service.js';
-import { Todo, TodoListResponse } from 'contracts/src/todos/todo.contracts.js';
+import type { TodoService } from "./todo.service.js";
+import { Todo, TodoListResponse } from "contracts/src/todos/todo.contracts.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeTodo(overrides: Partial<Todo> = {}): Todo {
   return {
-    id: '00000000-0000-0000-0000-000000000001',
-    title: 'Buy milk',
+    id: "00000000-0000-0000-0000-000000000001",
+    title: "Buy milk",
     completed: false,
-    createdAt: new Date('2024-01-01T00:00:00Z').toISOString(),
+    createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
     ...overrides,
   };
 }
@@ -47,10 +47,10 @@ async function buildApp(serviceOverrides = {}) {
 }
 // ─── GET /todos ───────────────────────────────────────────────────────────────
 
-describe('GET /todos', () => {
-  it('returns 200 with todo list', async () => {
+describe("GET /todos", () => {
+  it("returns 200 with todo list", async () => {
     const { fastify } = await buildApp();
-    const res = await fastify.inject({ method: 'GET', url: '/todos' });
+    const res = await fastify.inject({ method: "GET", url: "/todos" });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -59,100 +59,100 @@ describe('GET /todos', () => {
     expect(body.completedCount).toBe(0);
   });
 
-  it('filters by active', async () => {
+  it("filters by active", async () => {
     const { fastify, service } = await buildApp();
-    await fastify.inject({ method: 'GET', url: '/todos?filter=active' });
+    await fastify.inject({ method: "GET", url: "/todos?filter=active" });
 
-    expect(service.listTodos).toHaveBeenCalledWith('active');
+    expect(service.listTodos).toHaveBeenCalledWith("active");
   });
 
-  it('filters by completed', async () => {
+  it("filters by completed", async () => {
     const { fastify, service } = await buildApp();
-    await fastify.inject({ method: 'GET', url: '/todos?filter=completed' });
+    await fastify.inject({ method: "GET", url: "/todos?filter=completed" });
 
-    expect(service.listTodos).toHaveBeenCalledWith('completed');
+    expect(service.listTodos).toHaveBeenCalledWith("completed");
   });
 
-  it('returns 400 for invalid filter', async () => {
+  it("returns 400 for invalid filter", async () => {
     const { fastify } = await buildApp();
-    const res = await fastify.inject({ method: 'GET', url: '/todos?filter=invalid' });
+    const res = await fastify.inject({ method: "GET", url: "/todos?filter=invalid" });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 503 when service returns db error', async () => {
+  it("returns 503 when service returns db error", async () => {
     const { fastify } = await buildApp({
-      listTodos: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error('db down'))))),
+      listTodos: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
-    const res = await fastify.inject({ method: 'GET', url: '/todos' });
+    const res = await fastify.inject({ method: "GET", url: "/todos" });
 
     expect(res.statusCode).toBe(503);
-    expect(res.json().error).toBe('SERVICE_UNAVAILABLE');
+    expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
   });
 });
 
 // ─── POST /todos ──────────────────────────────────────────────────────────────
 
-describe('POST /todos', () => {
-  it('returns 201 with created todo', async () => {
+describe("POST /todos", () => {
+  it("returns 201 with created todo", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'POST',
-      url: '/todos',
-      payload: { title: 'Buy milk' },
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
     });
 
     expect(res.statusCode).toBe(201);
-    expect(res.json().title).toBe('Buy milk');
+    expect(res.json().title).toBe("Buy milk");
   });
 
-  it('returns 400 when title is missing', async () => {
+  it("returns 400 when title is missing", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'POST',
-      url: '/todos',
+      method: "POST",
+      url: "/todos",
       payload: {},
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 400 when title is empty string', async () => {
+  it("returns 400 when title is empty string", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'POST',
-      url: '/todos',
-      payload: { title: '' },
+      method: "POST",
+      url: "/todos",
+      payload: { title: "" },
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 400 when service returns empty title error', async () => {
+  it("returns 400 when service returns empty title error", async () => {
     const { fastify } = await buildApp({
       createTodo: vi.fn(() => Promise.resolve(err(TodoErrors.emptyTitle()))),
     });
     const res = await fastify.inject({
-      method: 'POST',
-      url: '/todos',
-      payload: { title: 'something' },
+      method: "POST",
+      url: "/todos",
+      payload: { title: "something" },
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 503 when service returns db error', async () => {
+  it("returns 503 when service returns db error", async () => {
     const { fastify } = await buildApp({
-      createTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error('db down'))))),
+      createTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
     const res = await fastify.inject({
-      method: 'POST',
-      url: '/todos',
-      payload: { title: 'Buy milk' },
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
     });
 
     expect(res.statusCode).toBe(503);
@@ -161,68 +161,68 @@ describe('POST /todos', () => {
 
 // ─── PATCH /todos/:id ─────────────────────────────────────────────────────────
 
-describe('PATCH /todos/:id', () => {
-  const validId = '00000000-0000-0000-0000-000000000001';
+describe("PATCH /todos/:id", () => {
+  const validId = "00000000-0000-0000-0000-000000000001";
 
-  it('returns 200 with updated todo', async () => {
-    const updated = makeTodo({ title: 'Updated' });
+  it("returns 200 with updated todo", async () => {
+    const updated = makeTodo({ title: "Updated" });
     const { fastify } = await buildApp({
       updateTodo: vi.fn(() => Promise.resolve(ok(updated))),
     });
     const res = await fastify.inject({
-      method: 'PATCH',
+      method: "PATCH",
       url: `/todos/${validId}`,
-      payload: { title: 'Updated' },
+      payload: { title: "Updated" },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().title).toBe('Updated');
+    expect(res.json().title).toBe("Updated");
   });
 
-  it('returns 400 for invalid uuid', async () => {
+  it("returns 400 for invalid uuid", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'PATCH',
-      url: '/todos/not-a-uuid',
-      payload: { title: 'Updated' },
+      method: "PATCH",
+      url: "/todos/not-a-uuid",
+      payload: { title: "Updated" },
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 400 for empty title', async () => {
+  it("returns 400 for empty title", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'PATCH',
+      method: "PATCH",
       url: `/todos/${validId}`,
-      payload: { title: '' },
+      payload: { title: "" },
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 404 when todo not found', async () => {
+  it("returns 404 when todo not found", async () => {
     const { fastify } = await buildApp({
       updateTodo: vi.fn(() => Promise.resolve(err(TodoErrors.notFound(validId)))),
     });
     const res = await fastify.inject({
-      method: 'PATCH',
+      method: "PATCH",
       url: `/todos/${validId}`,
       payload: { completed: true },
     });
 
     expect(res.statusCode).toBe(404);
-    expect(res.json().error).toBe('NOT_FOUND');
+    expect(res.json().error).toBe("NOT_FOUND");
   });
 
-  it('returns 503 on db error', async () => {
+  it("returns 503 on db error", async () => {
     const { fastify } = await buildApp({
-      updateTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error('db down'))))),
+      updateTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
     const res = await fastify.inject({
-      method: 'PATCH',
+      method: "PATCH",
       url: `/todos/${validId}`,
       payload: { completed: true },
     });
@@ -233,49 +233,49 @@ describe('PATCH /todos/:id', () => {
 
 // ─── DELETE /todos/:id ────────────────────────────────────────────────────────
 
-describe('DELETE /todos/:id', () => {
-  const validId = '00000000-0000-0000-0000-000000000001';
+describe("DELETE /todos/:id", () => {
+  const validId = "00000000-0000-0000-0000-000000000001";
 
-  it('returns 204 on success', async () => {
+  it("returns 204 on success", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'DELETE',
+      method: "DELETE",
       url: `/todos/${validId}`,
     });
 
     expect(res.statusCode).toBe(204);
   });
 
-  it('returns 400 for invalid uuid', async () => {
+  it("returns 400 for invalid uuid", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({
-      method: 'DELETE',
-      url: '/todos/not-a-uuid',
+      method: "DELETE",
+      url: "/todos/not-a-uuid",
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('VALIDATION_ERROR');
+    expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it('returns 404 when todo not found', async () => {
+  it("returns 404 when todo not found", async () => {
     const { fastify } = await buildApp({
       deleteTodo: vi.fn(() => Promise.resolve(err(TodoErrors.notFound(validId)))),
     });
     const res = await fastify.inject({
-      method: 'DELETE',
+      method: "DELETE",
       url: `/todos/${validId}`,
     });
 
     expect(res.statusCode).toBe(404);
-    expect(res.json().error).toBe('NOT_FOUND');
+    expect(res.json().error).toBe("NOT_FOUND");
   });
 
-  it('returns 503 on db error', async () => {
+  it("returns 503 on db error", async () => {
     const { fastify } = await buildApp({
-      deleteTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error('db down'))))),
+      deleteTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
     const res = await fastify.inject({
-      method: 'DELETE',
+      method: "DELETE",
       url: `/todos/${validId}`,
     });
 
@@ -285,19 +285,19 @@ describe('DELETE /todos/:id', () => {
 
 // ─── POST /todos/toggle-all ───────────────────────────────────────────────────
 
-describe('POST /todos/toggle-all', () => {
-  it('returns 204 on success', async () => {
+describe("POST /todos/toggle-all", () => {
+  it("returns 204 on success", async () => {
     const { fastify } = await buildApp();
-    const res = await fastify.inject({ method: 'POST', url: '/todos/toggle-all' });
+    const res = await fastify.inject({ method: "POST", url: "/todos/toggle-all" });
 
     expect(res.statusCode).toBe(204);
   });
 
-  it('returns 503 on db error', async () => {
+  it("returns 503 on db error", async () => {
     const { fastify } = await buildApp({
-      toggleAll: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error('db down'))))),
+      toggleAll: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
-    const res = await fastify.inject({ method: 'POST', url: '/todos/toggle-all' });
+    const res = await fastify.inject({ method: "POST", url: "/todos/toggle-all" });
 
     expect(res.statusCode).toBe(503);
   });
@@ -305,19 +305,19 @@ describe('POST /todos/toggle-all', () => {
 
 // ─── DELETE /todos/completed ──────────────────────────────────────────────────
 
-describe('DELETE /todos/completed', () => {
-  it('returns 204 on success', async () => {
+describe("DELETE /todos/completed", () => {
+  it("returns 204 on success", async () => {
     const { fastify } = await buildApp();
-    const res = await fastify.inject({ method: 'DELETE', url: '/todos/completed' });
+    const res = await fastify.inject({ method: "DELETE", url: "/todos/completed" });
 
     expect(res.statusCode).toBe(204);
   });
 
-  it('returns 503 on db error', async () => {
+  it("returns 503 on db error", async () => {
     const { fastify } = await buildApp({
-      clearCompleted: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error('db down'))))),
+      clearCompleted: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
-    const res = await fastify.inject({ method: 'DELETE', url: '/todos/completed' });
+    const res = await fastify.inject({ method: "DELETE", url: "/todos/completed" });
 
     expect(res.statusCode).toBe(503);
   });
