@@ -1,5 +1,5 @@
-import { buildApp } from './app.js';
-import { config } from './lib/config.js';
+import { buildApp } from "./app.js";
+import { config } from "./lib/config.js";
 
 // This is the entry point of your backend — the file that starts your server.
 
@@ -9,4 +9,4 @@ buildApp()
   .catch((error) => {
     console.error(error);
     process.exit(1);
-  }); 
+  });

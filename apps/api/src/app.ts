@@ -1,11 +1,11 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
+import Fastify from "fastify";
+import cors from "@fastify/cors";
 
-import { createDb } from './lib/db.js';
-import { config } from './lib/config.js';
-import { createTodoRepository } from './modules/todos/todo.repository.js';
-import { createTodoService } from './modules/todos/todo.service.js';
-import { todoRoutes } from './modules/todos/todo.route.js';
+import { createDb } from "./lib/db.js";
+import { config } from "./lib/config.js";
+import { createTodoRepository } from "./modules/todos/todo.repository.js";
+import { createTodoService } from "./modules/todos/todo.service.js";
+import { todoRoutes } from "./modules/todos/todo.route.js";
 
 //fastify set up and register routes and plugins
 export async function buildApp() {
@@ -14,7 +14,7 @@ export async function buildApp() {
   // Cross-cutting concerns via plugin
   await fastify.register(cors, {
     origin: config.corsOrigin,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   });
 
   // Dependency wiring — built once at startup, injected into modules
