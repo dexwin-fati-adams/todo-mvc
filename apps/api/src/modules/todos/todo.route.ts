@@ -1,26 +1,10 @@
-<<<<<<< HEAD
-import type { FastifyInstance } from 'fastify';
-import {
-  CreateTodoRequestSchema,
-  FilterQuerySchema,
-  TodoListResponseSchema,
-  TodoSchema,
-} from 'contracts';
-import { match } from 'ts-pattern';
-import type { TodoService } from './todo.service.js';
-import { toHttpError } from './todo.errors.js';
-import type { Result } from 'neverthrow';
-import { sendValidated } from '@/lib/response.js';
-
-=======
 import type { FastifyInstance } from "fastify";
-import { CreateTodoRequestSchema, TodoSchema } from "contracts";
+import { CreateTodoRequestSchema, FilterQuerySchema, TodoListResponseSchema, TodoSchema } from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
 import { toHttpError } from "./todo.errors.js";
 import type { Result } from "neverthrow";
 import { sendValidated } from "@/lib/response.js";
->>>>>>> origin/main
 
 export interface TodoDeps {
   todoService: TodoService;
@@ -73,28 +57,6 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       .exhaustive();
   });
 
-<<<<<<< HEAD
-      const result = await todoService.createTodo(body.data.title);
-      return match(toMatchable(result))
-        .with({ ok: true }, ({ value }) =>
-          sendValidated({
-            schema: TodoSchema,
-            body: value,
-            status: 201,
-            reply,
-            request,
-            // It's just a label for logging. When sendValidated fails to validate the response, it logs the error like this:
-            context: 'todos/create/201',
-          }),
-        )
-        .with({ ok: false }, ({ error }) => {
-          const { status, body: errorBody } = toHttpError(error);
-          return reply.status(status).send(errorBody);
-        })
-        .exhaustive();
-    },
-  );
-
   fastify.post(
     '/todos/toggle-all',
     {},
@@ -143,16 +105,3 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
 
   
 }
-=======
-  fastify.post("/todos/toggle-all", {}, async (_req, reply) => {
-    const result = await todoService.toggleAll();
-    return match(toMatchable(result))
-      .with({ ok: true }, () => reply.status(204).send())
-      .with({ ok: false }, ({ error }) => {
-        const { status, body } = toHttpError(error);
-        return reply.status(status).send(body);
-      })
-      .exhaustive();
-  });
-}
->>>>>>> origin/main
