@@ -27,17 +27,19 @@ export const TodoListResponseSchema = z.object({
 });
 export type TodoListResponse = z.infer<typeof TodoListResponseSchema>;
 
+const FilterEnum = z.enum(["all", "active", "completed"]);
+export type Filter = z.infer<typeof FilterEnum>;
+//  for validating untrusted input
 export const FilterQuerySchema = z.object({
-  filter: z.enum(["all", "active", "completed"]).default("all"),
+  filter: FilterEnum.default("all"),
 });
+export type FilterQuery = z.infer<typeof FilterQuerySchema>;
 
 export const TODO_FILTERS = {
   all: "all",
   active: "active",
   completed: "completed",
-} as const;
-
-export type Filter = (typeof TODO_FILTERS)[keyof typeof TODO_FILTERS];
+} as const satisfies Record<Filter, Filter>;
 
 export const TodoIdParamSchema = z.object({ id: z.string().uuid() });
 export type TodoIdParam = z.infer<typeof TodoIdParamSchema>;
