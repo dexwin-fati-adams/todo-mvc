@@ -4,7 +4,7 @@ import { match } from "ts-pattern";
 import { v4 as uuid } from "uuid";
 import type { TodoRepository } from "./todo.repository.js";
 import { TodoErrors, type TodoError } from "./todo.errors.js";
-import type { Todo, TodoListResponse } from "contracts";
+import type { Todo, TodoListResponse, Filter } from "contracts";
 import type { TodoDbRow } from "@/lib/schema.js";
 
 function rowToTodo(row: TodoDbRow): Todo {
@@ -44,7 +44,7 @@ type ToggleAllState = { type: "EMPTY" } | { type: "ALL_COMPLETED" } | { type: "H
 
 export interface TodoService {
   createTodo(rawTitle: string): ResultAsync<Todo, TodoError>;
-  listTodos(filter: "all" | "active" | "completed"): ResultAsync<TodoListResponse, TodoError>;
+  listTodos(filter: Filter): ResultAsync<TodoListResponse, TodoError>;
   updateTodo(id: string, patch: UpdatePatch): ResultAsync<Todo, TodoError>;
   deleteTodo(id: string): ResultAsync<void, TodoError>;
   toggleAll(): ResultAsync<void, TodoError>;
@@ -63,7 +63,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.insert(row).map(rowToTodo);
     },
 
-    listTodos(filter: "all" | "active" | "completed"): ResultAsync<TodoListResponse, TodoError> {
+    listTodos(filter: Filter): ResultAsync<TodoListResponse, TodoError> {
       return repo.findAll("all").andThen((allRows) =>
         repo.findAll(filter).map((filteredRows) => ({
           todos: filteredRows.map(rowToTodo),

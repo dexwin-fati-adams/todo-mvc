@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
 import { ResultAsync, err, ok } from "neverthrow";
+import { match } from "ts-pattern";
+import type { Filter } from "contracts";
 import type { Db } from "@/lib/db.js";
 import { todosTable, type TodoDbRow } from "@/lib/schema.js";
 import { TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
@@ -8,7 +10,7 @@ type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
-  findAll(filter: "all" | "active" | "completed"): ResultAsync<TodoDbRow[], TodoDbError>;
+  findAll(filter: Filter): ResultAsync<TodoDbRow[], TodoDbError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
@@ -26,26 +28,25 @@ export function createTodoRepository(db: Db): TodoRepository {
         return make(newTx);
       },
 
-      findAll(filter: "all" | "active" | "completed"): ResultAsync<TodoDbRow[], TodoDbError> {
+      findAll(filter: Filter): ResultAsync<TodoDbRow[], TodoDbError> {
         return ResultAsync.fromPromise(
-          (async () => {
-            switch (filter) {
-              case "active":
-                return tx
-                  .select()
-                  .from(todosTable)
-                  .where(eq(todosTable.completed, false))
-                  .orderBy(todosTable.createdAt);
-              case "completed":
-                return tx
-                  .select()
-                  .from(todosTable)
-                  .where(eq(todosTable.completed, true))
-                  .orderBy(todosTable.createdAt);
-              case "all":
-                return tx.select().from(todosTable).orderBy(todosTable.createdAt);
-            }
-          })(),
+          match(filter)
+            .with("active", () =>
+              tx
+                .select()
+                .from(todosTable)
+                .where(eq(todosTable.completed, false))
+                .orderBy(todosTable.createdAt),
+            )
+            .with("completed", () =>
+              tx
+                .select()
+                .from(todosTable)
+                .where(eq(todosTable.completed, true))
+                .orderBy(todosTable.createdAt),
+            )
+            .with("all", () => tx.select().from(todosTable).orderBy(todosTable.createdAt))
+            .exhaustive(),
           (cause) => TodoErrors.dbError(cause),
         );
       },
