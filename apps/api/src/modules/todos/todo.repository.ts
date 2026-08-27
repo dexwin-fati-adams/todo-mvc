@@ -35,8 +35,8 @@ export function createTodoRepository(db: Db): TodoRepository {
           .with("all", () => undefined)
           .exhaustive();
 
-          ///"It searches the database for todos that match the status and search conditions, 
-          // orders them by the todo was created the date , and returns an error if the database fails."
+        ///"It searches the database for todos that match the status and search conditions,
+        // orders them by the todo was created the date , and returns an error if the database fails."
         const searchCondition = search ? ilike(todosTable.title, `%${search}%`) : undefined;
 
         const whereCondition = and(statusCondition, searchCondition);

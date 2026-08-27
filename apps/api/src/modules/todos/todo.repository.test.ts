@@ -75,7 +75,7 @@ describe("findAll", () => {
     expect(result._unsafeUnwrap()).toHaveLength(1);
   });
 
-  it('matches a case-insensitive title substring when search is given', async () => {
+  it("matches a case-insensitive title substring when search is given", async () => {
     const rows = [makeRow({ title: "Buy milk" })];
     const db = {
       select: vi.fn().mockReturnValue({
