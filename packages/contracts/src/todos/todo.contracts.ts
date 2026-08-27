@@ -27,19 +27,21 @@ export const TodoListResponseSchema = z.object({
 });
 export type TodoListResponse = z.infer<typeof TodoListResponseSchema>;
 
-const FilterEnum = z.enum(["all", "active", "completed"]);
-export type Filter = z.infer<typeof FilterEnum>;
+const StatusEnum = z.enum(["all", "active", "completed"]);
+export type Status = z.infer<typeof StatusEnum>;
 //  for validating untrusted input
-export const FilterQuerySchema = z.object({
-  filter: FilterEnum.default("all"),
-});
-export type FilterQuery = z.infer<typeof FilterQuerySchema>;
+export const StatusQuerySchema = z
+  .object({
+    status: StatusEnum.default("all"),
+  })
+  .strict();
+export type StatusQuery = z.infer<typeof StatusQuerySchema>;
 
-export const TODO_FILTERS = {
+export const TODO_STATUSES = {
   all: "all",
   active: "active",
   completed: "completed",
-} as const satisfies Record<Filter, Filter>;
+} as const satisfies Record<Status, Status>;
 
 export const TodoIdParamSchema = z.object({ id: z.string().uuid() });
 export type TodoIdParam = z.infer<typeof TodoIdParamSchema>;
@@ -52,10 +54,10 @@ export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 
 type TodoPath = "/" | "/active" | "/completed";
 
-export function getFilterFromPath(path: TodoPath): Filter {
+export function getStatusFromPath(path: TodoPath): Status {
   return match(path)
-    .with("/", () => TODO_FILTERS.all)
-    .with("/active", () => TODO_FILTERS.active)
-    .with("/completed", () => TODO_FILTERS.completed)
+    .with("/", () => TODO_STATUSES.all)
+    .with("/active", () => TODO_STATUSES.active)
+    .with("/completed", () => TODO_STATUSES.completed)
     .exhaustive();
 }

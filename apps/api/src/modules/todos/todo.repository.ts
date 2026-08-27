@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { ResultAsync, err, ok } from "neverthrow";
 import { match } from "ts-pattern";
-import type { Filter } from "contracts";
+import type { Status } from "contracts";
 import type { Db } from "@/lib/db.js";
 import { todosTable, type TodoDbRow } from "@/lib/schema.js";
 import { TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
@@ -10,7 +10,7 @@ type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
-  findAll(filter: Filter): ResultAsync<TodoDbRow[], TodoDbError>;
+  findAll(status: Status): ResultAsync<TodoDbRow[], TodoDbError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
@@ -28,9 +28,9 @@ export function createTodoRepository(db: Db): TodoRepository {
         return make(newTx);
       },
 
-      findAll(filter: Filter): ResultAsync<TodoDbRow[], TodoDbError> {
+      findAll(status: Status): ResultAsync<TodoDbRow[], TodoDbError> {
         return ResultAsync.fromPromise(
-          match(filter)
+          match(status)
             .with("active", () =>
               tx
                 .select()
