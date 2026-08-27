@@ -23,7 +23,7 @@ services:
     ports:
       - "5435:5432"
     tmpfs:
-      - /var/lib/postgresql/data  # ephemeral: fresh DB every restart, good for tests
+      - /var/lib/postgresql/data # ephemeral: fresh DB every restart, good for tests
 
 volumes:
   todo_db_data:
