@@ -61,21 +61,21 @@ describe("GET /todos", () => {
 
   it("filters by active", async () => {
     const { fastify, service } = await buildApp();
-    await fastify.inject({ method: "GET", url: "/todos?filter=active" });
+    await fastify.inject({ method: "GET", url: "/todos?status=active" });
 
     expect(service.listTodos).toHaveBeenCalledWith("active", undefined);
   });
 
   it("filters by completed", async () => {
     const { fastify, service } = await buildApp();
-    await fastify.inject({ method: "GET", url: "/todos?filter=completed" });
+    await fastify.inject({ method: "GET", url: "/todos?status=completed" });
 
     expect(service.listTodos).toHaveBeenCalledWith("completed", undefined);
   });
 
   it("returns 400 for invalid filter", async () => {
     const { fastify } = await buildApp();
-    const res = await fastify.inject({ method: "GET", url: "/todos?filter=invalid" });
+    const res = await fastify.inject({ method: "GET", url: "/todos?status=invalid" });
 
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("VALIDATION_ERROR");

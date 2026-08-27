@@ -1,7 +1,7 @@
 import { and, eq, ilike } from "drizzle-orm";
 import { ResultAsync, err, ok } from "neverthrow";
 import { match } from "ts-pattern";
-import type { Filter } from "contracts";
+import type { Status } from "contracts";
 import type { Db } from "@/lib/db.js";
 import { todosTable, type TodoDbRow } from "@/lib/schema.js";
 import { TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
@@ -10,7 +10,7 @@ type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
-  findAll(filter: Filter, search?: string): ResultAsync<TodoDbRow[], TodoDbError>;
+  findAll(status: Status, search?: string): ResultAsync<TodoDbRow[], TodoDbError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
@@ -28,15 +28,13 @@ export function createTodoRepository(db: Db): TodoRepository {
         return make(newTx);
       },
 
-      findAll(filter: Filter, search?: string): ResultAsync<TodoDbRow[], TodoDbError> {
-        const statusCondition = match(filter)
+      findAll(status: Status, search?: string): ResultAsync<TodoDbRow[], TodoDbError> {
+        const statusCondition = match(status)
           .with("active", () => eq(todosTable.completed, false))
           .with("completed", () => eq(todosTable.completed, true))
           .with("all", () => undefined)
           .exhaustive();
 
-        ///"It searches the database for todos that match the status and search conditions,
-        // orders them by the todo was created the date , and returns an error if the database fails."
         const searchCondition = search ? ilike(todosTable.title, `%${search}%`) : undefined;
 
         const whereCondition = and(statusCondition, searchCondition);
