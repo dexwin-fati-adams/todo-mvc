@@ -29,9 +29,17 @@ export type TodoListResponse = z.infer<typeof TodoListResponseSchema>;
 
 const FilterEnum = z.enum(["all", "active", "completed"]);
 export type Filter = z.infer<typeof FilterEnum>;
-//  for validating untrusted input
+
+//"It validates the filter and search query parameters for GET /todos. The filter defaults to all, and search is optional, must be text,
+//  cannot be blank, and cannot be more than 100 characters."
 export const FilterQuerySchema = z.object({
   filter: FilterEnum.default("all"),
+  search: z
+    .string()
+    .trim()
+    .min(1, "Search cannot be blank")
+    .max(100, "Search must be 100 characters or fewer")
+    .optional(),
 });
 export type FilterQuery = z.infer<typeof FilterQuerySchema>;
 

@@ -89,7 +89,7 @@ describe("listTodos", () => {
 
     await service.listTodos("active");
 
-    expect(repo.findAll).toHaveBeenCalledWith("active");
+    expect(repo.findAll).toHaveBeenCalledWith("active", undefined);
   });
 });
 

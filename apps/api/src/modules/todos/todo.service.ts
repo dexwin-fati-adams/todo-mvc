@@ -44,7 +44,7 @@ type ToggleAllState = { type: "EMPTY" } | { type: "ALL_COMPLETED" } | { type: "H
 
 export interface TodoService {
   createTodo(rawTitle: string): ResultAsync<Todo, TodoError>;
-  listTodos(filter: Filter): ResultAsync<TodoListResponse, TodoError>;
+  listTodos(filter: Filter, search?: string): ResultAsync<TodoListResponse, TodoError>;
   updateTodo(id: string, patch: UpdatePatch): ResultAsync<Todo, TodoError>;
   deleteTodo(id: string): ResultAsync<void, TodoError>;
   toggleAll(): ResultAsync<void, TodoError>;
@@ -63,9 +63,9 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.insert(row).map(rowToTodo);
     },
 
-    listTodos(filter: Filter): ResultAsync<TodoListResponse, TodoError> {
+    listTodos(filter: Filter, search?: string): ResultAsync<TodoListResponse, TodoError> {
       return repo.findAll("all").andThen((allRows) =>
-        repo.findAll(filter).map((filteredRows) => ({
+        repo.findAll(filter, search).map((filteredRows) => ({
           todos: filteredRows.map(rowToTodo),
           activeCount: allRows.filter((r) => !r.completed).length,
           completedCount: allRows.filter((r) => r.completed).length,

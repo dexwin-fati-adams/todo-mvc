@@ -63,14 +63,14 @@ describe("GET /todos", () => {
     const { fastify, service } = await buildApp();
     await fastify.inject({ method: "GET", url: "/todos?filter=active" });
 
-    expect(service.listTodos).toHaveBeenCalledWith("active");
+    expect(service.listTodos).toHaveBeenCalledWith("active", undefined);
   });
 
   it("filters by completed", async () => {
     const { fastify, service } = await buildApp();
     await fastify.inject({ method: "GET", url: "/todos?filter=completed" });
 
-    expect(service.listTodos).toHaveBeenCalledWith("completed");
+    expect(service.listTodos).toHaveBeenCalledWith("completed", undefined);
   });
 
   it("returns 400 for invalid filter", async () => {

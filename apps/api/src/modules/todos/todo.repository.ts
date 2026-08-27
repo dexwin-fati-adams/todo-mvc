@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import { ResultAsync, err, ok } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Filter } from "contracts";
@@ -10,7 +10,7 @@ type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
-  findAll(filter: Filter): ResultAsync<TodoDbRow[], TodoDbError>;
+  findAll(filter: Filter, search?: string): ResultAsync<TodoDbRow[], TodoDbError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
@@ -28,25 +28,21 @@ export function createTodoRepository(db: Db): TodoRepository {
         return make(newTx);
       },
 
-      findAll(filter: Filter): ResultAsync<TodoDbRow[], TodoDbError> {
+      findAll(filter: Filter, search?: string): ResultAsync<TodoDbRow[], TodoDbError> {
+        const statusCondition = match(filter)
+          .with("active", () => eq(todosTable.completed, false))
+          .with("completed", () => eq(todosTable.completed, true))
+          .with("all", () => undefined)
+          .exhaustive();
+
+          ///"It searches the database for todos that match the status and search conditions, 
+          // orders them by the todo was created the date , and returns an error if the database fails."
+        const searchCondition = search ? ilike(todosTable.title, `%${search}%`) : undefined;
+
+        const whereCondition = and(statusCondition, searchCondition);
+
         return ResultAsync.fromPromise(
-          match(filter)
-            .with("active", () =>
-              tx
-                .select()
-                .from(todosTable)
-                .where(eq(todosTable.completed, false))
-                .orderBy(todosTable.createdAt),
-            )
-            .with("completed", () =>
-              tx
-                .select()
-                .from(todosTable)
-                .where(eq(todosTable.completed, true))
-                .orderBy(todosTable.createdAt),
-            )
-            .with("all", () => tx.select().from(todosTable).orderBy(todosTable.createdAt))
-            .exhaustive(),
+          tx.select().from(todosTable).where(whereCondition).orderBy(todosTable.createdAt),
           (cause) => TodoErrors.dbError(cause),
         );
       },
