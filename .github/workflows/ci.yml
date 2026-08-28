@@ -40,8 +40,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
 
-      - name: Run migrations
-        run: pnpm db:migrate
+      - name: Apply database schema
+        run: pnpm --filter api drizzle-kit push --force
         env:
           DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
 
