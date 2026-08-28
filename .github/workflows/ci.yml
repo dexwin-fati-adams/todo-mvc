@@ -44,7 +44,13 @@ jobs:
         run: pnpm --filter api drizzle-kit push --force
         env:
           DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
+          PORT: "0"
+          HOST: "127.0.0.1"
+          CORS_ORIGIN: "http://localhost:3000"
 
       - run: pnpm test
         env:
           DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
+          PORT: "0"
+          HOST: "127.0.0.1"
+          CORS_ORIGIN: "http://localhost:3000"
