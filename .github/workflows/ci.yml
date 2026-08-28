@@ -13,9 +13,9 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: ${{ secrets.TEST_DB_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.TEST_DB_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.TEST_DB_NAME }}
+          POSTGRES_USER: todo_test_user
+          POSTGRES_PASSWORD: todo_test_password
+          POSTGRES_DB: todo_test_db
         ports:
           - 5435:5432
         options: >-
@@ -43,8 +43,8 @@ jobs:
       - name: Run migrations
         run: pnpm db:migrate
         env:
-          DATABASE_URL: postgres://${{ secrets.TEST_DB_USER }}:${{ secrets.TEST_DB_PASSWORD }}@localhost:5435/${{ secrets.TEST_DB_NAME }}
+          DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
 
       - run: pnpm test
         env:
-          DATABASE_URL: postgres://${{ secrets.TEST_DB_USER }}:${{ secrets.TEST_DB_PASSWORD }}@localhost:5435/${{ secrets.TEST_DB_NAME }}
+          DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
