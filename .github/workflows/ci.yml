@@ -8,6 +8,22 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: todo_test_user
+          POSTGRES_PASSWORD: todo_test_password
+          POSTGRES_DB: todo_test_db
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -23,4 +39,18 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
+
+      - name: Apply database schema
+        run: pnpm --filter api drizzle-kit push --force
+        env:
+          DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
+          PORT: "0"
+          HOST: "127.0.0.1"
+          CORS_ORIGIN: "http://localhost:3000"
+
       - run: pnpm test
+        env:
+          DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
+          PORT: "0"
+          HOST: "127.0.0.1"
+          CORS_ORIGIN: "http://localhost:3000"

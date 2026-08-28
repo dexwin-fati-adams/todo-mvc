@@ -12,5 +12,18 @@ services:
     volumes:
       - todo_db_data:/var/lib/postgresql/data
 
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: todo-mvc-test-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: todo_test_user
+      POSTGRES_PASSWORD: todo_test_password
+      POSTGRES_DB: todo_test_db
+    ports:
+      - "5435:5432"
+    tmpfs:
+      - /var/lib/postgresql/data # ephemeral: fresh DB every restart, good for tests
+
 volumes:
   todo_db_data:

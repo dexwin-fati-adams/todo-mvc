@@ -18,12 +18,14 @@ function makeRow(overrides: Partial<TodoDbRow> = {}): TodoDbRow {
 // ─── findAll ──────────────────────────────────────────────────────────────────
 
 describe("findAll", () => {
-  it('returns all todos when filter is "all"', async () => {
+  it('returns all todos when filter is "all" and no search is given', async () => {
     const rows = [makeRow({ id: "1" }), makeRow({ id: "2", completed: true })];
     const db = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue(rows),
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(rows),
+          }),
         }),
       }),
     } as unknown as Db;
@@ -73,11 +75,70 @@ describe("findAll", () => {
     expect(result._unsafeUnwrap()).toHaveLength(1);
   });
 
+  it("matches a case-insensitive title substring when search is given", async () => {
+    const rows = [makeRow({ title: "Buy milk" })];
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.findAll("all", "MILK");
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toHaveLength(1);
+    expect(result._unsafeUnwrap()[0]?.title).toBe("Buy milk");
+  });
+
+  it("combines status and search with AND", async () => {
+    const rows = [makeRow({ title: "Buy milk", completed: false })];
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.findAll("active", "milk");
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toHaveLength(1);
+  });
+
+  it("returns an empty array when no rows match the search", async () => {
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.findAll("all", "nonexistent");
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toHaveLength(0);
+  });
+
   it("returns TODO_DB_ERROR when db throws", async () => {
     const db = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockRejectedValue(new Error("db down")),
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockRejectedValue(new Error("db down")),
+          }),
         }),
       }),
     } as unknown as Db;
