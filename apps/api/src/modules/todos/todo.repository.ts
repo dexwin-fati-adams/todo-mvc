@@ -54,7 +54,7 @@ export function createTodoRepository(db: Db): TodoRepository {
 
         const whereCondition = and(statusCondition, searchCondition);
 
-     //It gets the todos for the current page and counts the total number of todos that fit the filter or search.
+        //It gets the todos for the current page and counts the total number of todos that fit the filter or search.
         const itemsQuery = tx
           .select()
           .from(todosTable)
@@ -63,14 +63,10 @@ export function createTodoRepository(db: Db): TodoRepository {
           .limit(pageSize)
           .offset((page - 1) * pageSize);
 
-        const countQuery = tx
-          .select({ value: count() })
-          .from(todosTable)
-          .where(whereCondition);
+        const countQuery = tx.select({ value: count() }).from(todosTable).where(whereCondition);
 
-        return ResultAsync.fromPromise(
-          Promise.all([itemsQuery, countQuery]),
-          (cause) => TodoErrors.dbError(cause),
+        return ResultAsync.fromPromise(Promise.all([itemsQuery, countQuery]), (cause) =>
+          TodoErrors.dbError(cause),
         ).map(([items, countRows]) => ({
           items,
           totalItems: countRows[0]?.value ?? 0,
