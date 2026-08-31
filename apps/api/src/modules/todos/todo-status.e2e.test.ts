@@ -138,3 +138,90 @@ describe("GET /todos — search query handling (real app, real database)", () =>
     await app.inject({ method: "DELETE", url: `/todos/${id}` });
   });
 });
+
+describe("GET /todos — pagination query handling (real app, real database)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("../../app.js");
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.inject({ method: "DELETE", url: "/todos/completed" });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("defaults to page 1 and pageSize 20 when omitted", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(20);
+  });
+
+  it("accepts explicit page and pageSize", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos?page=1&pageSize=5" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(5);
+  });
+
+  it("limits results to pageSize and reports totalItems/totalPages correctly", async () => {
+    for (const title of ["Todo A", "Todo B", "Todo C"]) {
+      const created = await app.inject({ method: "POST", url: "/todos", payload: { title } });
+      expect(created.statusCode).toBe(201);
+    }
+
+    const res = await app.inject({ method: "GET", url: "/todos?pageSize=2&page=1" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.todos.length).toBeLessThanOrEqual(2);
+    expect(body.totalItems).toBeGreaterThanOrEqual(3);
+    expect(body.totalPages).toBe(Math.ceil(body.totalItems / 2));
+
+    // cleanup: these active todos won't be caught by the afterEach (only clears completed)
+    for (const todo of body.todos as { id: string }[]) {
+      await app.inject({ method: "DELETE", url: `/todos/${todo.id}` });
+    }
+    const res2 = await app.inject({ method: "GET", url: "/todos?pageSize=100" });
+    for (const todo of res2.json().todos as { id: string }[]) {
+      await app.inject({ method: "DELETE", url: `/todos/${todo.id}` });
+    }
+  });
+
+  it("returns an empty todos array for a page beyond the last page", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos?page=9999&pageSize=10" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().todos).toEqual([]);
+  });
+
+  it("rejects page below 1", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos?page=0" });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects a non-numeric page", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos?page=abc" });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects pageSize below 1", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos?pageSize=0" });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("rejects pageSize over 100", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos?pageSize=101" });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+});

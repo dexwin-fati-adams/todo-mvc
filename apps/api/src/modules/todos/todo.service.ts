@@ -44,7 +44,12 @@ type ToggleAllState = { type: "EMPTY" } | { type: "ALL_COMPLETED" } | { type: "H
 
 export interface TodoService {
   createTodo(rawTitle: string): ResultAsync<Todo, TodoError>;
-  listTodos(status: Status, search?: string): ResultAsync<TodoListResponse, TodoError>;
+  listTodos(
+    status: Status,
+    search: string | undefined,
+    page: number,
+    pageSize: number,
+  ): ResultAsync<TodoListResponse, TodoError>;
   updateTodo(id: string, patch: UpdatePatch): ResultAsync<Todo, TodoError>;
   deleteTodo(id: string): ResultAsync<void, TodoError>;
   toggleAll(): ResultAsync<void, TodoError>;
@@ -63,13 +68,32 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.insert(row).map(rowToTodo);
     },
 
-    listTodos(status: Status, search?: string): ResultAsync<TodoListResponse, TodoError> {
-      return repo.findAll("all").andThen((allRows) =>
-        repo.findAll(status, search).map((filteredRows) => ({
-          todos: filteredRows.map(rowToTodo),
-          activeCount: allRows.filter((r) => !r.completed).length,
-          completedCount: allRows.filter((r) => r.completed).length,
-        })),
+    //This function gets all todos to count active and completed ones, gets the requested page of todos,
+    //  calculates how many pages there are, and returns everything together.
+    listTodos(
+      status: Status,
+      search: string | undefined,
+      page: number,
+      pageSize: number,
+    ): ResultAsync<TodoListResponse, TodoError> {
+      
+      return repo.findAll("all", undefined, 1, Number.MAX_SAFE_INTEGER).andThen((allResult) =>
+        repo.findAll(status, search, page, pageSize).map((filteredResult) => {
+          const totalPages =
+            filteredResult.totalItems === 0
+              ? 0
+              : Math.ceil(filteredResult.totalItems / pageSize);
+
+          return {
+            todos: filteredResult.items.map(rowToTodo),
+            activeCount: allResult.items.filter((r) => !r.completed).length,
+            completedCount: allResult.items.filter((r) => r.completed).length,
+            page,
+            pageSize,
+            totalItems: filteredResult.totalItems,
+            totalPages,
+          };
+        }),
       );
     },
 
@@ -87,7 +111,9 @@ export function createTodoService(repo: TodoRepository): TodoService {
     },
 
     toggleAll(): ResultAsync<void, TodoError> {
-      return repo.findAll("all").andThen((todos) => {
+      return repo.findAll("all", undefined, 1, Number.MAX_SAFE_INTEGER).andThen((result) => {
+        const todos = result.items;
+
         const state: ToggleAllState = match(todos)
           .when(
             (t) => t.length === 0,

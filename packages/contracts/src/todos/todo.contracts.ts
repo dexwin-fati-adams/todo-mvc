@@ -24,15 +24,19 @@ export const TodoListResponseSchema = z.object({
   todos: z.array(TodoSchema),
   activeCount: z.number().int().min(0),
   completedCount: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1),
+  totalItems: z.number().int().min(0),
+  totalPages: z.number().int().min(0),
 });
 export type TodoListResponse = z.infer<typeof TodoListResponseSchema>;
 
 const StatusEnum = z.enum(["all", "active", "completed"]);
 export type Status = z.infer<typeof StatusEnum>;
 
-// It validates the status and search query parameters for GET /todos. The status
-// defaults to all, and search is optional, must be text, cannot be blank, and
-// cannot be more than 100 characters.
+// It validates the status, search, page, and pageSize query parameters for
+// GET /todos. status defaults to all, search is optional (non-blank, max 100
+// chars), page defaults to 1, and pageSize defaults to 20 (max 100).
 export const StatusQuerySchema = z
   .object({
     status: StatusEnum.default("all"),
@@ -42,6 +46,8 @@ export const StatusQuerySchema = z
       .min(1, "Search cannot be blank")
       .max(100, "Search must be 100 characters or fewer")
       .optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
   })
   .strict();
 export type StatusQuery = z.infer<typeof StatusQuerySchema>;

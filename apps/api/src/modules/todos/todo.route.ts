@@ -23,6 +23,7 @@ function toMatchable<T, E>(result: Result<T, E>) {
     (error) => ({ ok: false as const, error }),
   );
 }
+// formatZodIssues takes the errors from Zod and changes them into a simple, readable message that the API can send to the user.
 
 function formatZodIssues(issues: { path: (string | number)[]; message: string }[]): string {
   return issues
@@ -79,7 +80,12 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
 
-    const result = await todoService.listTodos(query.data.status, query.data.search);
+    const result = await todoService.listTodos(
+      query.data.status,
+      query.data.search,
+      query.data.page,
+      query.data.pageSize,
+    );
     return match(toMatchable(result))
       .with({ ok: true }, ({ value }) =>
         sendValidated({
