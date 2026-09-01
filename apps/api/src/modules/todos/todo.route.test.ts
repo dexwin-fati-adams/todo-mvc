@@ -5,7 +5,7 @@ import { todoRoutes } from "./todo.route.js";
 import { TodoErrors } from "./todo.errors.js";
 
 import type { TodoService } from "./todo.service.js";
-import type { Todo,  } from "contracts";
+import { Todo, TodoListResponse } from "contracts/src/todos/todo.contracts.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -19,18 +19,18 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
   };
 }
 
-// function makeTodoListResponse(overrides: Partial<TodoListResponse> = {}): TodoListResponse {
-//   return {
-//     todos: [makeTodo()],
-//     activeCount: 1,
-//     completedCount: 0,
-//     ...overrides,
-//   };
-// }
+function makeTodoListResponse(overrides: Partial<TodoListResponse> = {}): TodoListResponse {
+  return {
+    todos: [makeTodo()],
+    activeCount: 1,
+    completedCount: 0,
+    ...overrides,
+  };
+}
 
 function makeService(overrides = {}) {
   return {
-    listTodos: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve())),
+    listTodos: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodoListResponse()))),
     createTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     updateTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     deleteTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
@@ -63,14 +63,14 @@ describe("GET /todos", () => {
     const { fastify, service } = await buildApp();
     await fastify.inject({ method: "GET", url: "/todos?status=active" });
 
-    expect(service.listTodos).toHaveBeenCalledWith("active", undefined);
+    expect(service.listTodos).toHaveBeenCalledWith("active");
   });
 
   it("filters by completed", async () => {
     const { fastify, service } = await buildApp();
     await fastify.inject({ method: "GET", url: "/todos?status=completed" });
 
-    expect(service.listTodos).toHaveBeenCalledWith("completed", undefined);
+    expect(service.listTodos).toHaveBeenCalledWith("completed");
   });
 
   it("returns 400 for invalid filter", async () => {
