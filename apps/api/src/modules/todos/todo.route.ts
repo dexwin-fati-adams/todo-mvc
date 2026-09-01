@@ -79,7 +79,12 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
 
-    const result = await todoService.listTodos(query.data.status, query.data.search);
+    const result = await todoService.listTodos(
+      query.data.status,
+      query.data.search,
+      query.data.page,
+      query.data.pageSize,
+    );
     return match(toMatchable(result))
       .with({ ok: true }, ({ value }) =>
         sendValidated({
