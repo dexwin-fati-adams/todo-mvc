@@ -81,9 +81,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.findAll("all", undefined, 1, Number.MAX_SAFE_INTEGER).andThen((allResult) =>
         repo.findAll(status, search, page, pageSize).map((filteredResult) => {
           const totalPages =
-            filteredResult.totalItems === 0
-              ? 0
-              : Math.ceil(filteredResult.totalItems / pageSize);
+            filteredResult.totalItems === 0 ? 0 : Math.ceil(filteredResult.totalItems / pageSize);
 
           return {
             todos: filteredResult.items.map(rowToTodo),

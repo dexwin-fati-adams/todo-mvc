@@ -38,10 +38,7 @@ function makeFindAllDb(items: TodoDbRow[], totalCount: number): Db {
     }),
   };
 
-  const select = vi
-    .fn()
-    .mockReturnValueOnce(itemsChain)
-    .mockReturnValueOnce(countChain);
+  const select = vi.fn().mockReturnValueOnce(itemsChain).mockReturnValueOnce(countChain);
 
   return { select } as unknown as Db;
 }
@@ -161,10 +158,7 @@ describe("findAll", () => {
         where: vi.fn().mockResolvedValue([{ value: 21 }]),
       }),
     };
-    const select = vi
-      .fn()
-      .mockReturnValueOnce(itemsChain)
-      .mockReturnValueOnce(countChain);
+    const select = vi.fn().mockReturnValueOnce(itemsChain).mockReturnValueOnce(countChain);
     const db = { select } as unknown as Db;
 
     const repo = createTodoRepository(db);
@@ -192,10 +186,7 @@ describe("findAll", () => {
         where: vi.fn().mockResolvedValue([{ value: 0 }]),
       }),
     };
-    const select = vi
-      .fn()
-      .mockReturnValueOnce(itemsChain)
-      .mockReturnValueOnce(countChain);
+    const select = vi.fn().mockReturnValueOnce(itemsChain).mockReturnValueOnce(countChain);
     const db = { select } as unknown as Db;
 
     const repo = createTodoRepository(db);
@@ -222,10 +213,7 @@ describe("findAll", () => {
         where: vi.fn().mockRejectedValue(new Error("count failed")),
       }),
     };
-    const select = vi
-      .fn()
-      .mockReturnValueOnce(itemsChain)
-      .mockReturnValueOnce(countChain);
+    const select = vi.fn().mockReturnValueOnce(itemsChain).mockReturnValueOnce(countChain);
     const db = { select } as unknown as Db;
 
     const repo = createTodoRepository(db);

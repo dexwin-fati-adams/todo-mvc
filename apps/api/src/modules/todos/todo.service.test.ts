@@ -24,9 +24,7 @@ function makeFindAllResult(items: TodoDbRow[] = [], totalItems = items.length): 
 function makeRepo(overrides: Partial<TodoRepository> = {}): TodoRepository {
   const repo: TodoRepository = {
     withTransaction: vi.fn(() => repo),
-    findAll: vi.fn(() =>
-      ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult())),
-    ),
+    findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult()))),
     insert: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeRow()))),
     update: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeRow()))),
     delete: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
@@ -108,9 +106,7 @@ describe("listTodos", () => {
     const repo = makeRepo({
       findAll: vi
         .fn()
-        .mockReturnValueOnce(
-          ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))),
-        )
+        .mockReturnValueOnce(ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))))
         .mockReturnValueOnce(
           ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(pageRows, 9))),
         ),
@@ -129,9 +125,7 @@ describe("listTodos", () => {
 
   it("returns totalPages of 0 when there are no matching items", async () => {
     const repo = makeRepo({
-      findAll: vi.fn(() =>
-        ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))),
-      ),
+      findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0)))),
     });
     const service = createTodoService(repo);
 
@@ -147,9 +141,7 @@ describe("listTodos", () => {
     const repo = makeRepo({
       findAll: vi
         .fn()
-        .mockReturnValueOnce(
-          ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))),
-        )
+        .mockReturnValueOnce(ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))))
         .mockReturnValueOnce(
           ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 3))),
         ),
@@ -231,9 +223,7 @@ describe("toggleAll", () => {
   it("marks all complete when any are active", async () => {
     const rows = [makeRow({ completed: false }), makeRow({ completed: true })];
     const repo = makeRepo({
-      findAll: vi.fn(() =>
-        ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(rows))),
-      ),
+      findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(rows)))),
     });
     const service = createTodoService(repo);
 
@@ -245,9 +235,7 @@ describe("toggleAll", () => {
   it("marks all active when all are completed", async () => {
     const rows = [makeRow({ completed: true }), makeRow({ completed: true })];
     const repo = makeRepo({
-      findAll: vi.fn(() =>
-        ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(rows))),
-      ),
+      findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(rows)))),
     });
     const service = createTodoService(repo);
 

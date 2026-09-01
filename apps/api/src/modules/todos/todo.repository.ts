@@ -65,14 +65,10 @@ export function createTodoRepository(db: Db): TodoRepository {
           .limit(pageSize)
           .offset((page - 1) * pageSize);
 
-        const countQuery = tx
-          .select({ value: count() })
-          .from(todosTable)
-          .where(whereCondition);
+        const countQuery = tx.select({ value: count() }).from(todosTable).where(whereCondition);
 
-        return ResultAsync.fromPromise(
-          Promise.all([itemsQuery, countQuery]),
-          (cause) => TodoErrors.dbError(cause),
+        return ResultAsync.fromPromise(Promise.all([itemsQuery, countQuery]), (cause) =>
+          TodoErrors.dbError(cause),
         ).map(([items, countRows]) => ({
           items,
           totalItems: countRows[0]?.value ?? 0,
