@@ -51,6 +51,8 @@ export const TODO_STATUSES = {
   active: "active",
   completed: "completed",
 } as const satisfies Record<Status, Status>;
+//This code is making sure the id in your URL is a valid UUID.
+//UUID means Universally Unique Identifier.
 
 export const TodoIdParamSchema = z.object({ id: z.string().uuid() });
 export type TodoIdParam = z.infer<typeof TodoIdParamSchema>;
