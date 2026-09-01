@@ -47,7 +47,7 @@ export const StatusQuerySchema = z
       .max(100, "Search must be 100 characters or fewer")
       .optional(),
       //corce.number() converts the value to a number if possible, otherwise it will throw an error and it fromone type to the other
-      //page = which page u want to get, pageSize = how many items per page
+      //page = which page u want to get, pageSize = how many items per page 
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
   })
