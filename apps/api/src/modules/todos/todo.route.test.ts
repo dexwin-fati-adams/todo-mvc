@@ -5,7 +5,7 @@ import { todoRoutes } from "./todo.route.js";
 import { TodoErrors } from "./todo.errors.js";
 
 import type { TodoService } from "./todo.service.js";
-import { Todo, TodoListResponse } from "contracts/src/todos/todo.contracts.js";
+import type { Todo,  } from "contracts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -19,18 +19,18 @@ function makeTodo(overrides: Partial<Todo> = {}): Todo {
   };
 }
 
-function makeTodoListResponse(overrides: Partial<TodoListResponse> = {}): TodoListResponse {
-  return {
-    todos: [makeTodo()],
-    activeCount: 1,
-    completedCount: 0,
-    ...overrides,
-  };
-}
+// function makeTodoListResponse(overrides: Partial<TodoListResponse> = {}): TodoListResponse {
+//   return {
+//     todos: [makeTodo()],
+//     activeCount: 1,
+//     completedCount: 0,
+//     ...overrides,
+//   };
+// }
 
 function makeService(overrides = {}) {
   return {
-    listTodos: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodoListResponse()))),
+    listTodos: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve())),
     createTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     updateTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     deleteTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
