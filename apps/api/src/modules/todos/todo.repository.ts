@@ -58,7 +58,7 @@ export function createTodoRepository(db: Db): TodoRepository {
         // Filtering and searching happen first (via whereCondition), applied
         // to both the count and the page query, so totalItems always matches
         // the full matching set, not just the one page returned.
-      //Simply explain: getting a page of todos AND finding out how many todos exist in total.
+        //Simply explain: getting a page of todos AND finding out how many todos exist in total.
         const itemsQuery = tx
           .select()
           .from(todosTable)
