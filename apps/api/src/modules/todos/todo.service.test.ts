@@ -3,7 +3,7 @@ import { createTodoService } from "./todo.service.js";
 import { TodoErrors } from "./todo.errors.js";
 import type { TodoRepository } from "./todo.repository.js";
 import type { TodoDbRow } from "@/lib/schema.js";
-import { ok, okAsync, err, errAsync } from "neverthrow";
+import { okAsync, errAsync } from "neverthrow";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -239,8 +239,8 @@ describe("listTodos", () => {
   it("propagates repository errors", async () => {
     const dbError = TodoErrors.dbError(new Error("DB failed"));
     vi.mocked(repo.findAll)
-      .mockResolvedValueOnce(ok({ items: [], totalItems: 0 }))
-      .mockResolvedValueOnce(err(dbError));
+      .mockReturnValueOnce(okAsync({ items: [], totalItems: 0 }))
+      .mockReturnValueOnce(errAsync(dbError));
 
     const service = createTodoService(repo);
     const result = await service.listTodos("all", undefined, 1, 10);
@@ -401,9 +401,7 @@ describe("toggleAll", () => {
   });
 
   it("does nothing when there are no todos", async () => {
-    vi.mocked(repo.findAll).mockReturnValue(
-      okAsync({ items: [], totalItems: 0 })
-    );
+    vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: [], totalItems: 0 }));
     vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
 
     const service = createTodoService(repo);
