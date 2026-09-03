@@ -41,7 +41,7 @@ describe("createTodo", () => {
 
   it("creates a todo with a valid title", async () => {
     const row = makeRow({ title: "Buy milk" });
-    vi.mocked(repo.insert).mockResolvedValue(ok(row));
+    vi.mocked(repo.insert).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     const result = await service.createTodo("  Buy milk  ");
@@ -67,7 +67,7 @@ describe("createTodo", () => {
 
   it("trims whitespace from the title", async () => {
     const row = makeRow({ title: "Trimmed title" });
-    vi.mocked(repo.insert).mockResolvedValue(ok(row));
+    vi.mocked(repo.insert).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     await service.createTodo("  Trimmed title  ");
@@ -79,7 +79,7 @@ describe("createTodo", () => {
 
   it("propagates repository errors", async () => {
     const dbError = TodoErrors.dbError(new Error("Connection failed"));
-    vi.mocked(repo.insert).mockResolvedValue(err(dbError));
+    vi.mocked(repo.insert).mockReturnValue(errAsync(dbError));
 
     const service = createTodoService(repo);
     const result = await service.createTodo("Buy milk");
@@ -102,7 +102,7 @@ describe("getTodo", () => {
 
   it("returns a todo by id", async () => {
     const row = makeRow({ id: "todo-123" });
-    vi.mocked(repo.findById).mockResolvedValue(ok(row));
+    vi.mocked(repo.findById).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     const result = await service.getTodo("todo-123");
@@ -117,7 +117,7 @@ describe("getTodo", () => {
 
   it("returns NOT_FOUND error when todo doesn't exist", async () => {
     const notFoundError = TodoErrors.notFound("nonexistent-id");
-    vi.mocked(repo.findById).mockResolvedValue(err(notFoundError));
+    vi.mocked(repo.findById).mockReturnValue(errAsync(notFoundError));
 
     const service = createTodoService(repo);
     const result = await service.getTodo("nonexistent-id");
@@ -131,7 +131,7 @@ describe("getTodo", () => {
   it("converts createdAt to ISO string", async () => {
     const createdAt = new Date("2024-06-15T10:30:00Z");
     const row = makeRow({ createdAt });
-    vi.mocked(repo.findById).mockResolvedValue(ok(row));
+    vi.mocked(repo.findById).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     const result = await service.getTodo("todo-123");
@@ -164,8 +164,8 @@ describe("listTodos", () => {
     ];
 
     vi.mocked(repo.findAll)
-      .mockResolvedValueOnce(ok({ items: allTodos, totalItems: 3 }))
-      .mockResolvedValueOnce(ok({ items: todos, totalItems: 2 }));
+      .mockReturnValueOnce(okAsync({ items: allTodos, totalItems: 3 }))
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 2 }));
 
     const service = createTodoService(repo);
     const result = await service.listTodos("all", undefined, 1, 2);
@@ -183,8 +183,8 @@ describe("listTodos", () => {
 
   it("returns empty list with correct counts", async () => {
     vi.mocked(repo.findAll)
-      .mockResolvedValueOnce(ok({ items: [], totalItems: 0 }))
-      .mockResolvedValueOnce(ok({ items: [], totalItems: 0 }));
+      .mockReturnValueOnce(okAsync({ items: [], totalItems: 0 }))
+      .mockReturnValueOnce(okAsync({ items: [], totalItems: 0 }));
 
     const service = createTodoService(repo);
     const result = await service.listTodos("all", undefined, 1, 10);
@@ -204,8 +204,8 @@ describe("listTodos", () => {
     );
 
     vi.mocked(repo.findAll)
-      .mockResolvedValueOnce(ok({ items: todos, totalItems: 7 }))
-      .mockResolvedValueOnce(ok({ items: todos.slice(0, 3), totalItems: 7 }));
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 7 }))
+      .mockReturnValueOnce(okAsync({ items: todos.slice(0, 3), totalItems: 7 }));
 
     const service = createTodoService(repo);
     const result = await service.listTodos("all", undefined, 1, 3);
@@ -220,19 +220,27 @@ describe("listTodos", () => {
     const todos = [makeRow({ id: "1", title: "Milk" })];
 
     vi.mocked(repo.findAll)
-      .mockResolvedValueOnce(ok({ items: todos, totalItems: 1 }))
-      .mockResolvedValueOnce(ok({ items: todos, totalItems: 1 }));
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 1 }))
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 1 }));
 
     const service = createTodoService(repo);
     await service.listTodos("active", "milk", 1, 10);
 
-    expect(vi.mocked(repo.findAll)).toHaveBeenNthCalledWith(1, "all", undefined, 1, Number.MAX_SAFE_INTEGER);
+    expect(vi.mocked(repo.findAll)).toHaveBeenNthCalledWith(
+      1,
+      "all",
+      undefined,
+      1,
+      Number.MAX_SAFE_INTEGER,
+    );
     expect(vi.mocked(repo.findAll)).toHaveBeenNthCalledWith(2, "active", "milk", 1, 10);
   });
 
   it("propagates repository errors", async () => {
     const dbError = TodoErrors.dbError(new Error("DB failed"));
-    vi.mocked(repo.findAll).mockResolvedValueOnce(ok({ items: [], totalItems: 0 })).mockResolvedValueOnce(err(dbError));
+    vi.mocked(repo.findAll)
+      .mockResolvedValueOnce(ok({ items: [], totalItems: 0 }))
+      .mockResolvedValueOnce(err(dbError));
 
     const service = createTodoService(repo);
     const result = await service.listTodos("all", undefined, 1, 10);
@@ -252,7 +260,7 @@ describe("updateTodo", () => {
 
   it("updates todo title", async () => {
     const row = makeRow({ id: "todo-1", title: "New Title" });
-    vi.mocked(repo.update).mockResolvedValue(ok(row));
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     const result = await service.updateTodo("todo-1", { title: "New Title" });
@@ -266,7 +274,7 @@ describe("updateTodo", () => {
 
   it("updates todo completed status", async () => {
     const row = makeRow({ id: "todo-1", completed: true });
-    vi.mocked(repo.update).mockResolvedValue(ok(row));
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     const result = await service.updateTodo("todo-1", { completed: true });
@@ -280,18 +288,21 @@ describe("updateTodo", () => {
 
   it("updates both title and completed status", async () => {
     const row = makeRow({ id: "todo-1", title: "Updated", completed: true });
-    vi.mocked(repo.update).mockResolvedValue(ok(row));
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     const result = await service.updateTodo("todo-1", { title: "Updated", completed: true });
 
     expect(result.isOk()).toBe(true);
-    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { title: "Updated", completed: true });
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", {
+      title: "Updated",
+      completed: true,
+    });
   });
 
   it("trims title whitespace", async () => {
     const row = makeRow({ title: "Trimmed" });
-    vi.mocked(repo.update).mockResolvedValue(ok(row));
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
     const service = createTodoService(repo);
     await service.updateTodo("todo-1", { title: "  Trimmed  " });
@@ -311,7 +322,7 @@ describe("updateTodo", () => {
 
   it("propagates repository NOT_FOUND error", async () => {
     const notFoundError = TodoErrors.notFound("todo-1");
-    vi.mocked(repo.update).mockResolvedValue(err(notFoundError));
+    vi.mocked(repo.update).mockReturnValue(errAsync(notFoundError));
 
     const service = createTodoService(repo);
     const result = await service.updateTodo("todo-1", { title: "New Title" });
@@ -333,7 +344,7 @@ describe("deleteTodo", () => {
   });
 
   it("deletes a todo by id", async () => {
-    vi.mocked(repo.delete).mockResolvedValue(ok(undefined));
+    vi.mocked(repo.delete).mockReturnValue(okAsync(undefined));
 
     const service = createTodoService(repo);
     const result = await service.deleteTodo("todo-1");
@@ -344,7 +355,7 @@ describe("deleteTodo", () => {
 
   it("propagates repository errors", async () => {
     const dbError = TodoErrors.dbError(new Error("DB error"));
-    vi.mocked(repo.delete).mockResolvedValue(err(dbError));
+    vi.mocked(repo.delete).mockReturnValue(errAsync(dbError));
 
     const service = createTodoService(repo);
     const result = await service.deleteTodo("todo-1");
@@ -366,10 +377,7 @@ describe("toggleAll", () => {
   });
 
   it("marks all as complete when there are incomplete todos", async () => {
-    const todos = [
-      makeRow({ id: "1", completed: false }),
-      makeRow({ id: "2", completed: true }),
-    ];
+    const todos = [makeRow({ id: "1", completed: false }), makeRow({ id: "2", completed: true })];
     vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: todos, totalItems: 2 }));
     vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
 
@@ -381,10 +389,7 @@ describe("toggleAll", () => {
   });
 
   it("marks all as incomplete when all are completed", async () => {
-    const todos = [
-      makeRow({ id: "1", completed: true }),
-      makeRow({ id: "2", completed: true }),
-    ];
+    const todos = [makeRow({ id: "1", completed: true }), makeRow({ id: "2", completed: true })];
     vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: todos, totalItems: 2 }));
     vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
 
@@ -396,7 +401,9 @@ describe("toggleAll", () => {
   });
 
   it("does nothing when there are no todos", async () => {
-    vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: [], totalItems: 0 }));
+    vi.mocked(repo.findAll).mockReturnValue(
+      okAsync({ items: [], totalItems: 0 })
+    );
     vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
 
     const service = createTodoService(repo);
