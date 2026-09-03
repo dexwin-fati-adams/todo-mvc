@@ -35,6 +35,7 @@ function makeTodoListResponse(overrides: Partial<TodoListResponse> = {}): TodoLi
 function makeService(overrides = {}) {
   return {
     listTodos: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodoListResponse()))),
+    getTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     createTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     updateTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     deleteTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
@@ -120,6 +121,50 @@ describe("GET /todos", () => {
 
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
+  });
+});
+
+// ─── GET /todos/:id ───────────────────────────────────────────────────────────
+
+describe("GET /todos/:id", () => {
+  const validId = "00000000-0000-0000-0000-000000000001";
+
+  it("returns 200 with the todo", async () => {
+    const todo = makeTodo({ title: "Buy milk" });
+    const { fastify } = await buildApp({
+      getTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({ method: "GET", url: `/todos/${validId}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe("Buy milk");
+  });
+
+  it("returns 400 for invalid uuid", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({ method: "GET", url: "/todos/not-a-uuid" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 404 when todo not found", async () => {
+    const { fastify } = await buildApp({
+      getTodo: vi.fn(() => Promise.resolve(err(TodoErrors.notFound(validId)))),
+    });
+    const res = await fastify.inject({ method: "GET", url: `/todos/${validId}` });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+  });
+
+  it("returns 503 on db error", async () => {
+    const { fastify } = await buildApp({
+      getTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
+    });
+    const res = await fastify.inject({ method: "GET", url: `/todos/${validId}` });
+
+    expect(res.statusCode).toBe(503);
   });
 });
 

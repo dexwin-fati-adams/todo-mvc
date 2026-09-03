@@ -103,6 +103,33 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       .exhaustive();
   });
 
+  fastify.get("/todos/:id", {}, async (request, reply) => {
+    const params = TodoIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
+    }
+
+    const result = await todoService.getTodo(params.data.id);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        sendValidated({
+          schema: TodoSchema,
+          body: value,
+          status: 200,
+          reply,
+          request,
+          context: "todos/get/200",
+        }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
+      })
+      .exhaustive();
+  });
+
   fastify.patch("/todos/:id", {}, async (request, reply) => {
     const params = TodoIdParamSchema.safeParse(request.params);
     if (!params.success) {

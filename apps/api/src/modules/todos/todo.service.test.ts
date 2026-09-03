@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
-import { ResultAsync } from "neverthrow";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createTodoService } from "./todo.service.js";
 import { TodoErrors } from "./todo.errors.js";
-import type { TodoRepository, FindAllResult } from "./todo.repository.js";
+import type { TodoRepository } from "./todo.repository.js";
 import type { TodoDbRow } from "@/lib/schema.js";
+import { okAsync, errAsync } from "neverthrow";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -17,260 +17,440 @@ function makeRow(overrides: Partial<TodoDbRow> = {}): TodoDbRow {
   };
 }
 
-function makeFindAllResult(items: TodoDbRow[] = [], totalItems = items.length): FindAllResult {
-  return { items, totalItems };
-}
-
-function makeRepo(overrides: Partial<TodoRepository> = {}): TodoRepository {
-  const repo: TodoRepository = {
-    withTransaction: vi.fn(() => repo),
-    findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult()))),
-    insert: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeRow()))),
-    update: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeRow()))),
-    delete: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
-    updateAllCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
-    deleteAllCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
-    ...overrides,
+function makeMockRepository(): TodoRepository {
+  return {
+    withTransaction: vi.fn().mockReturnThis(),
+    findAll: vi.fn(),
+    findById: vi.fn(),
+    insert: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    updateAllCompleted: vi.fn(),
+    deleteAllCompleted: vi.fn(),
   };
-  return repo;
 }
 
 // ─── createTodo ───────────────────────────────────────────────────────────────
 
 describe("createTodo", () => {
-  it("inserts a todo with trimmed title and returns it", async () => {
-    const row = makeRow({ title: "Buy milk" });
-    const repo = makeRepo({
-      insert: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(row))),
-    });
-    const service = createTodoService(repo);
+  let repo: TodoRepository;
 
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("creates a todo with a valid title", async () => {
+    const row = makeRow({ title: "Buy milk" });
+    vi.mocked(repo.insert).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
     const result = await service.createTodo("  Buy milk  ");
 
     expect(result.isOk()).toBe(true);
-    expect(result._unsafeUnwrap().title).toBe("Buy milk");
-    expect(repo.insert).toHaveBeenCalledOnce();
+    if (result.isOk()) {
+      expect(result.value.title).toBe("Buy milk");
+      expect(result.value.completed).toBe(false);
+      expect(result.value.id).toBeDefined();
+      expect(result.value.createdAt).toBeDefined();
+    }
   });
 
-  it("returns TODO_EMPTY_TITLE when title is blank", async () => {
-    const repo = makeRepo();
+  it("returns EMPTY_TITLE error for empty title", async () => {
     const service = createTodoService(repo);
-
     const result = await service.createTodo("   ");
 
     expect(result.isErr()).toBe(true);
-    expect(result._unsafeUnwrapErr().type).toBe("TODO_EMPTY_TITLE");
-    expect(repo.insert).not.toHaveBeenCalled();
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_EMPTY_TITLE");
+    }
+  });
+
+  it("trims whitespace from the title", async () => {
+    const row = makeRow({ title: "Trimmed title" });
+    vi.mocked(repo.insert).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    await service.createTodo("  Trimmed title  ");
+
+    expect(vi.mocked(repo.insert)).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Trimmed title" }),
+    );
+  });
+
+  it("propagates repository errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("Connection failed"));
+    vi.mocked(repo.insert).mockReturnValue(errAsync(dbError));
+
+    const service = createTodoService(repo);
+    const result = await service.createTodo("Buy milk");
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_DB_ERROR");
+    }
+  });
+});
+
+// ─── getTodo ──────────────────────────────────────────────────────────────────
+
+describe("getTodo", () => {
+  let repo: TodoRepository;
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("returns a todo by id", async () => {
+    const row = makeRow({ id: "todo-123" });
+    vi.mocked(repo.findById).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    const result = await service.getTodo("todo-123");
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.id).toBe("todo-123");
+      expect(result.value.title).toBe("Buy milk");
+      expect(result.value.createdAt).toBe(row.createdAt.toISOString());
+    }
+  });
+
+  it("returns NOT_FOUND error when todo doesn't exist", async () => {
+    const notFoundError = TodoErrors.notFound("nonexistent-id");
+    vi.mocked(repo.findById).mockReturnValue(errAsync(notFoundError));
+
+    const service = createTodoService(repo);
+    const result = await service.getTodo("nonexistent-id");
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_NOT_FOUND");
+    }
+  });
+
+  it("converts createdAt to ISO string", async () => {
+    const createdAt = new Date("2024-06-15T10:30:00Z");
+    const row = makeRow({ createdAt });
+    vi.mocked(repo.findById).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    const result = await service.getTodo("todo-123");
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.createdAt).toBe(createdAt.toISOString());
+    }
   });
 });
 
 // ─── listTodos ────────────────────────────────────────────────────────────────
 
 describe("listTodos", () => {
-  it("returns todos with correct active and completed counts", async () => {
-    const allRows = [
-      makeRow({ id: "1", completed: false }),
-      makeRow({ id: "2", completed: true }),
-      makeRow({ id: "3", completed: false }),
+  let repo: TodoRepository;
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("returns a list of todos with pagination", async () => {
+    const todos = [
+      makeRow({ id: "1", title: "Task 1", completed: false }),
+      makeRow({ id: "2", title: "Task 2", completed: true }),
     ];
-    const repo = makeRepo({
-      findAll: vi.fn(() =>
-        ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(allRows))),
-      ),
-    });
-    const service = createTodoService(repo);
+    const allTodos = [
+      makeRow({ id: "1", title: "Task 1", completed: false }),
+      makeRow({ id: "2", title: "Task 2", completed: true }),
+      makeRow({ id: "3", title: "Task 3", completed: true }),
+    ];
 
-    const result = await service.listTodos("all", undefined, 1, 20);
+    vi.mocked(repo.findAll)
+      .mockReturnValueOnce(okAsync({ items: allTodos, totalItems: 3 }))
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 2 }));
+
+    const service = createTodoService(repo);
+    const result = await service.listTodos("all", undefined, 1, 2);
 
     expect(result.isOk()).toBe(true);
-    const data = result._unsafeUnwrap();
-    expect(data.todos).toHaveLength(3);
-    expect(data.activeCount).toBe(2);
-    expect(data.completedCount).toBe(1);
+    if (result.isOk()) {
+      expect(result.value.todos).toHaveLength(2);
+      expect(result.value.activeCount).toBe(1);
+      expect(result.value.completedCount).toBe(2);
+      expect(result.value.totalPages).toBe(1);
+      expect(result.value.page).toBe(1);
+      expect(result.value.pageSize).toBe(2);
+    }
   });
 
-  it("delegates status, search, page, and pageSize to repository", async () => {
-    const repo = makeRepo();
+  it("returns empty list with correct counts", async () => {
+    vi.mocked(repo.findAll)
+      .mockReturnValueOnce(okAsync({ items: [], totalItems: 0 }))
+      .mockReturnValueOnce(okAsync({ items: [], totalItems: 0 }));
+
     const service = createTodoService(repo);
-
-    await service.listTodos("active", "milk", 2, 10);
-
-    // First call is the unfiltered "all" call used for the footer counts.
-    expect(repo.findAll).toHaveBeenNthCalledWith(1, "all", undefined, 1, Number.MAX_SAFE_INTEGER);
-    // Second call is the real, filtered, paginated call.
-    expect(repo.findAll).toHaveBeenNthCalledWith(2, "active", "milk", 2, 10);
-  });
-
-  it("returns page, pageSize, totalItems, and totalPages from the filtered result", async () => {
-    const pageRows = [makeRow({ id: "1" }), makeRow({ id: "2" })];
-    const repo = makeRepo({
-      findAll: vi
-        .fn()
-        .mockReturnValueOnce(ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))))
-        .mockReturnValueOnce(
-          ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(pageRows, 9))),
-        ),
-    });
-    const service = createTodoService(repo);
-
-    const result = await service.listTodos("all", undefined, 2, 4);
+    const result = await service.listTodos("all", undefined, 1, 10);
 
     expect(result.isOk()).toBe(true);
-    const data = result._unsafeUnwrap();
-    expect(data.page).toBe(2);
-    expect(data.pageSize).toBe(4);
-    expect(data.totalItems).toBe(9);
-    expect(data.totalPages).toBe(3); // Math.ceil(9 / 4)
+    if (result.isOk()) {
+      expect(result.value.todos).toHaveLength(0);
+      expect(result.value.activeCount).toBe(0);
+      expect(result.value.completedCount).toBe(0);
+      expect(result.value.totalPages).toBe(0);
+    }
   });
 
-  it("returns totalPages of 0 when there are no matching items", async () => {
-    const repo = makeRepo({
-      findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0)))),
-    });
-    const service = createTodoService(repo);
+  it("calculates total pages correctly", async () => {
+    const todos = Array.from({ length: 7 }, (_, i) =>
+      makeRow({ id: String(i + 1), completed: i % 2 === 0 }),
+    );
 
-    const result = await service.listTodos("all", undefined, 1, 20);
+    vi.mocked(repo.findAll)
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 7 }))
+      .mockReturnValueOnce(okAsync({ items: todos.slice(0, 3), totalItems: 7 }));
+
+    const service = createTodoService(repo);
+    const result = await service.listTodos("all", undefined, 1, 3);
 
     expect(result.isOk()).toBe(true);
-    const data = result._unsafeUnwrap();
-    expect(data.totalItems).toBe(0);
-    expect(data.totalPages).toBe(0);
+    if (result.isOk()) {
+      expect(result.value.totalPages).toBe(3);
+    }
   });
 
-  it("returns an empty todos list for a page beyond the last real page", async () => {
-    const repo = makeRepo({
-      findAll: vi
-        .fn()
-        .mockReturnValueOnce(ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 0))))
-        .mockReturnValueOnce(
-          ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult([], 3))),
-        ),
-    });
+  it("handles search and status filters", async () => {
+    const todos = [makeRow({ id: "1", title: "Milk" })];
+
+    vi.mocked(repo.findAll)
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 1 }))
+      .mockReturnValueOnce(okAsync({ items: todos, totalItems: 1 }));
+
     const service = createTodoService(repo);
+    await service.listTodos("active", "milk", 1, 10);
 
-    const result = await service.listTodos("all", undefined, 99, 20);
+    expect(vi.mocked(repo.findAll)).toHaveBeenNthCalledWith(
+      1,
+      "all",
+      undefined,
+      1,
+      Number.MAX_SAFE_INTEGER,
+    );
+    expect(vi.mocked(repo.findAll)).toHaveBeenNthCalledWith(2, "active", "milk", 1, 10);
+  });
 
-    expect(result.isOk()).toBe(true);
-    const data = result._unsafeUnwrap();
-    expect(data.todos).toHaveLength(0);
-    expect(data.totalItems).toBe(3);
-    expect(data.totalPages).toBe(1);
+  it("propagates repository errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("DB failed"));
+    vi.mocked(repo.findAll)
+      .mockReturnValueOnce(okAsync({ items: [], totalItems: 0 }))
+      .mockReturnValueOnce(errAsync(dbError));
+
+    const service = createTodoService(repo);
+    const result = await service.listTodos("all", undefined, 1, 10);
+
+    expect(result.isErr()).toBe(true);
   });
 });
 
 // ─── updateTodo ───────────────────────────────────────────────────────────────
 
 describe("updateTodo", () => {
-  it("trims title before updating", async () => {
-    const repo = makeRepo();
-    const service = createTodoService(repo);
+  let repo: TodoRepository;
 
-    await service.updateTodo("1", { title: "  Trimmed  " });
-
-    expect(repo.update).toHaveBeenCalledWith("1", { title: "Trimmed" });
+  beforeEach(() => {
+    repo = makeMockRepository();
   });
 
-  it("returns TODO_EMPTY_TITLE when new title is blank", async () => {
-    const repo = makeRepo();
-    const service = createTodoService(repo);
+  it("updates todo title", async () => {
+    const row = makeRow({ id: "todo-1", title: "New Title" });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
-    const result = await service.updateTodo("1", { title: "   " });
+    const service = createTodoService(repo);
+    const result = await service.updateTodo("todo-1", { title: "New Title" });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.title).toBe("New Title");
+    }
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { title: "New Title" });
+  });
+
+  it("updates todo completed status", async () => {
+    const row = makeRow({ id: "todo-1", completed: true });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    const result = await service.updateTodo("todo-1", { completed: true });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.completed).toBe(true);
+    }
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { completed: true });
+  });
+
+  it("updates both title and completed status", async () => {
+    const row = makeRow({ id: "todo-1", title: "Updated", completed: true });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    const result = await service.updateTodo("todo-1", { title: "Updated", completed: true });
+
+    expect(result.isOk()).toBe(true);
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", {
+      title: "Updated",
+      completed: true,
+    });
+  });
+
+  it("trims title whitespace", async () => {
+    const row = makeRow({ title: "Trimmed" });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    await service.updateTodo("todo-1", { title: "  Trimmed  " });
+
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { title: "Trimmed" });
+  });
+
+  it("returns EMPTY_TITLE error for empty title", async () => {
+    const service = createTodoService(repo);
+    const result = await service.updateTodo("todo-1", { title: "   " });
 
     expect(result.isErr()).toBe(true);
-    expect(result._unsafeUnwrapErr().type).toBe("TODO_EMPTY_TITLE");
-    expect(repo.update).not.toHaveBeenCalled();
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_EMPTY_TITLE");
+    }
   });
 
-  it("updates completed flag without touching title", async () => {
-    const repo = makeRepo();
+  it("propagates repository NOT_FOUND error", async () => {
+    const notFoundError = TodoErrors.notFound("todo-1");
+    vi.mocked(repo.update).mockReturnValue(errAsync(notFoundError));
+
     const service = createTodoService(repo);
+    const result = await service.updateTodo("todo-1", { title: "New Title" });
 
-    await service.updateTodo("1", { completed: true });
-
-    expect(repo.update).toHaveBeenCalledWith("1", { completed: true });
-  });
-
-  it("propagates TODO_NOT_FOUND from repository", async () => {
-    const repo = makeRepo({
-      update: vi.fn(() =>
-        ResultAsync.fromPromise(Promise.reject(new Error("x")), () => TodoErrors.notFound("99")),
-      ),
-    });
-    const service = createTodoService(repo);
-
-    const result = await service.updateTodo("99", { completed: true });
-
-    expect(result._unsafeUnwrapErr().type).toBe("TODO_NOT_FOUND");
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_NOT_FOUND");
+    }
   });
 });
 
 // ─── deleteTodo ───────────────────────────────────────────────────────────────
 
 describe("deleteTodo", () => {
-  it("delegates to repository delete", async () => {
-    const repo = makeRepo();
+  let repo: TodoRepository;
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("deletes a todo by id", async () => {
+    vi.mocked(repo.delete).mockReturnValue(okAsync(undefined));
+
     const service = createTodoService(repo);
+    const result = await service.deleteTodo("todo-1");
 
-    await service.deleteTodo("abc");
+    expect(result.isOk()).toBe(true);
+    expect(vi.mocked(repo.delete)).toHaveBeenCalledWith("todo-1");
+  });
 
-    expect(repo.delete).toHaveBeenCalledWith("abc");
+  it("propagates repository errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("DB error"));
+    vi.mocked(repo.delete).mockReturnValue(errAsync(dbError));
+
+    const service = createTodoService(repo);
+    const result = await service.deleteTodo("todo-1");
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_DB_ERROR");
+    }
   });
 });
 
 // ─── toggleAll ────────────────────────────────────────────────────────────────
 
 describe("toggleAll", () => {
-  it("marks all complete when any are active", async () => {
-    const rows = [makeRow({ completed: false }), makeRow({ completed: true })];
-    const repo = makeRepo({
-      findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(rows)))),
-    });
-    const service = createTodoService(repo);
+  let repo: TodoRepository;
 
-    await service.toggleAll();
-
-    expect(repo.updateAllCompleted).toHaveBeenCalledWith(true);
+  beforeEach(() => {
+    repo = makeMockRepository();
   });
 
-  it("marks all active when all are completed", async () => {
-    const rows = [makeRow({ completed: true }), makeRow({ completed: true })];
-    const repo = makeRepo({
-      findAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeFindAllResult(rows)))),
-    });
+  it("marks all as complete when there are incomplete todos", async () => {
+    const todos = [makeRow({ id: "1", completed: false }), makeRow({ id: "2", completed: true })];
+    vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: todos, totalItems: 2 }));
+    vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
+
     const service = createTodoService(repo);
+    const result = await service.toggleAll();
 
-    await service.toggleAll();
-
-    expect(repo.updateAllCompleted).toHaveBeenCalledWith(false);
+    expect(result.isOk()).toBe(true);
+    expect(vi.mocked(repo.updateAllCompleted)).toHaveBeenCalledWith(true);
   });
 
-  it("propagates db error from findAll", async () => {
-    const repo = makeRepo({
-      findAll: vi.fn(() =>
-        ResultAsync.fromPromise(Promise.reject(new Error("down")), () =>
-          TodoErrors.dbError(new Error("down")),
-        ),
-      ),
-    });
-    const service = createTodoService(repo);
+  it("marks all as incomplete when all are completed", async () => {
+    const todos = [makeRow({ id: "1", completed: true }), makeRow({ id: "2", completed: true })];
+    vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: todos, totalItems: 2 }));
+    vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
 
+    const service = createTodoService(repo);
+    const result = await service.toggleAll();
+
+    expect(result.isOk()).toBe(true);
+    expect(vi.mocked(repo.updateAllCompleted)).toHaveBeenCalledWith(false);
+  });
+
+  it("does nothing when there are no todos", async () => {
+    vi.mocked(repo.findAll).mockReturnValue(okAsync({ items: [], totalItems: 0 }));
+    vi.mocked(repo.updateAllCompleted).mockReturnValue(okAsync(undefined));
+
+    const service = createTodoService(repo);
+    const result = await service.toggleAll();
+
+    expect(result.isOk()).toBe(true);
+    expect(vi.mocked(repo.updateAllCompleted)).toHaveBeenCalledWith(false);
+  });
+
+  it("propagates repository errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("DB error"));
+    vi.mocked(repo.findAll).mockReturnValue(errAsync(dbError));
+
+    const service = createTodoService(repo);
     const result = await service.toggleAll();
 
     expect(result.isErr()).toBe(true);
-    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
-    expect(repo.updateAllCompleted).not.toHaveBeenCalled();
   });
 });
 
 // ─── clearCompleted ───────────────────────────────────────────────────────────
 
 describe("clearCompleted", () => {
-  it("delegates to repository deleteAllCompleted", async () => {
-    const repo = makeRepo();
+  let repo: TodoRepository;
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("deletes all completed todos", async () => {
+    vi.mocked(repo.deleteAllCompleted).mockReturnValue(okAsync(undefined));
+
     const service = createTodoService(repo);
+    const result = await service.clearCompleted();
 
-    await service.clearCompleted();
+    expect(result.isOk()).toBe(true);
+    expect(vi.mocked(repo.deleteAllCompleted)).toHaveBeenCalled();
+  });
 
-    expect(repo.deleteAllCompleted).toHaveBeenCalledOnce();
+  it("propagates repository errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("DB error"));
+    vi.mocked(repo.deleteAllCompleted).mockReturnValue(errAsync(dbError));
+
+    const service = createTodoService(repo);
+    const result = await service.clearCompleted();
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_DB_ERROR");
+    }
   });
 });

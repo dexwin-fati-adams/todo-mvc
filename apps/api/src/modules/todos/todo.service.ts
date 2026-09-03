@@ -44,6 +44,7 @@ type ToggleAllState = { type: "EMPTY" } | { type: "ALL_COMPLETED" } | { type: "H
 
 export interface TodoService {
   createTodo(rawTitle: string): ResultAsync<Todo, TodoError>;
+  getTodo(id: string): ResultAsync<Todo, TodoError>;
   listTodos(
     status: Status,
     search: string | undefined,
@@ -66,6 +67,10 @@ export function createTodoService(repo: TodoRepository): TodoService {
 
       const row: TodoDbRow = { id: uuid(), title, completed: false, createdAt: new Date() };
       return repo.insert(row).map(rowToTodo);
+    },
+
+    getTodo(id: string): ResultAsync<Todo, TodoError> {
+      return repo.findById(id).map(rowToTodo);
     },
 
     listTodos(

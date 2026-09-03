@@ -21,6 +21,7 @@ export interface TodoRepository {
     page: number,
     pageSize: number,
   ): ResultAsync<FindAllResult, TodoDbError>;
+  findById(id: string): ResultAsync<TodoDbRow, TodoUpdateError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
@@ -57,6 +58,7 @@ export function createTodoRepository(db: Db): TodoRepository {
         // Filtering and searching happen first (via whereCondition), applied
         // to both the count and the page query, so totalItems always matches
         // the full matching set, not just the one page returned.
+        //Simply explain: getting a page of todos AND finding out how many todos exist in total.
         const itemsQuery = tx
           .select()
           .from(todosTable)
@@ -73,6 +75,18 @@ export function createTodoRepository(db: Db): TodoRepository {
           items,
           totalItems: countRows[0]?.value ?? 0,
         }));
+      },
+
+      findById(id: string): ResultAsync<TodoDbRow, TodoUpdateError> {
+        return ResultAsync.fromPromise(
+          tx.select().from(todosTable).where(eq(todosTable.id, id)),
+          (cause): TodoDbError => TodoErrors.dbError(cause),
+        ).andThen((rows) => {
+          if (rows.length === 0) {
+            return err(TodoErrors.notFound(id));
+          }
+          return ok(rows[0]!);
+        });
       },
 
       insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError> {
