@@ -1,4 +1,4 @@
-import { and, eq, ilike } from "drizzle-orm";
+import { and, count, eq, ilike } from "drizzle-orm";
 import { ResultAsync, err, ok } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Status } from "contracts";
@@ -8,9 +8,19 @@ import { TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.err
 
 type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
+export interface FindAllResult {
+  items: TodoDbRow[];
+  totalItems: number;
+}
+
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
-  findAll(status: Status, search?: string): ResultAsync<TodoDbRow[], TodoDbError>;
+  findAll(
+    status: Status,
+    search: string | undefined,
+    page: number,
+    pageSize: number,
+  ): ResultAsync<FindAllResult, TodoDbError>;
   insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError>;
   update(
     id: string,
@@ -28,7 +38,12 @@ export function createTodoRepository(db: Db): TodoRepository {
         return make(newTx);
       },
 
-      findAll(status: Status, search?: string): ResultAsync<TodoDbRow[], TodoDbError> {
+      findAll(
+        status: Status,
+        search: string | undefined,
+        page: number,
+        pageSize: number,
+      ): ResultAsync<FindAllResult, TodoDbError> {
         const statusCondition = match(status)
           .with("active", () => eq(todosTable.completed, false))
           .with("completed", () => eq(todosTable.completed, true))
@@ -39,10 +54,25 @@ export function createTodoRepository(db: Db): TodoRepository {
 
         const whereCondition = and(statusCondition, searchCondition);
 
-        return ResultAsync.fromPromise(
-          tx.select().from(todosTable).where(whereCondition).orderBy(todosTable.createdAt),
-          (cause) => TodoErrors.dbError(cause),
-        );
+        // Filtering and searching happen first (via whereCondition), applied
+        // to both the count and the page query, so totalItems always matches
+        // the full matching set, not just the one page returned.
+        const itemsQuery = tx
+          .select()
+          .from(todosTable)
+          .where(whereCondition)
+          .orderBy(todosTable.createdAt)
+          .limit(pageSize)
+          .offset((page - 1) * pageSize);
+
+        const countQuery = tx.select({ value: count() }).from(todosTable).where(whereCondition);
+
+        return ResultAsync.fromPromise(Promise.all([itemsQuery, countQuery]), (cause) =>
+          TodoErrors.dbError(cause),
+        ).map(([items, countRows]) => ({
+          items,
+          totalItems: countRows[0]?.value ?? 0,
+        }));
       },
 
       insert(row: TodoDbRow): ResultAsync<TodoDbRow, TodoDbError> {

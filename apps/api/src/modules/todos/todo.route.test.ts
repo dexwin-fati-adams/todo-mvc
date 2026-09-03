@@ -24,6 +24,10 @@ function makeTodoListResponse(overrides: Partial<TodoListResponse> = {}): TodoLi
     todos: [makeTodo()],
     activeCount: 1,
     completedCount: 0,
+    page: 1,
+    pageSize: 20,
+    totalItems: 1,
+    totalPages: 1,
     ...overrides,
   };
 }
@@ -57,25 +61,52 @@ describe("GET /todos", () => {
     expect(body.todos).toHaveLength(1);
     expect(body.activeCount).toBe(1);
     expect(body.completedCount).toBe(0);
+    expect(body.page).toBe(1);
+    expect(body.pageSize).toBe(20);
+    expect(body.totalItems).toBe(1);
+    expect(body.totalPages).toBe(1);
   });
 
   it("filters by active", async () => {
     const { fastify, service } = await buildApp();
     await fastify.inject({ method: "GET", url: "/todos?status=active" });
 
-    expect(service.listTodos).toHaveBeenCalledWith("active", undefined);
+    expect(service.listTodos).toHaveBeenCalledWith("active", undefined, 1, 20);
   });
 
   it("filters by completed", async () => {
     const { fastify, service } = await buildApp();
     await fastify.inject({ method: "GET", url: "/todos?status=completed" });
 
-    expect(service.listTodos).toHaveBeenCalledWith("completed", undefined);
+    expect(service.listTodos).toHaveBeenCalledWith("completed", undefined, 1, 20);
+  });
+
+  it("passes page and pageSize from query", async () => {
+    const { fastify, service } = await buildApp();
+    await fastify.inject({ method: "GET", url: "/todos?page=2&pageSize=5" });
+
+    expect(service.listTodos).toHaveBeenCalledWith("all", undefined, 2, 5);
   });
 
   it("returns 400 for invalid filter", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({ method: "GET", url: "/todos?status=invalid" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 for invalid page", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({ method: "GET", url: "/todos?page=0" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 for pageSize over max", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({ method: "GET", url: "/todos?pageSize=101" });
 
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("VALIDATION_ERROR");
