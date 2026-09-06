@@ -7,6 +7,10 @@ import { createTodoRepository } from "./modules/todos/todo.repository.js";
 import { createTodoService } from "./modules/todos/todo.service.js";
 import { todoRoutes } from "./modules/todos/todo.route.js";
 
+
+//This code sets up the Fastify server, connects the database, creates the Todo repository 
+// and Todo service, and connects the Todo routes to the server
+
 //fastify set up and register routes and plugins
 export async function buildApp() {
   const fastify = Fastify({ logger: true });

@@ -51,14 +51,13 @@ export function createTodoRepository(db: Db): TodoRepository {
           .with("all", () => undefined)
           .exhaustive();
 
+          //Give me todos matching this status AND containing this search word.
         const searchCondition = search ? ilike(todosTable.title, `%${search}%`) : undefined;
 
         const whereCondition = and(statusCondition, searchCondition);
 
-        // Filtering and searching happen first (via whereCondition), applied
-        // to both the count and the page query, so totalItems always matches
-        // the full matching set, not just the one page returned.
-        //Simply explain: getting a page of todos AND finding out how many todos exist in total.
+      
+       //Get the todos for the current page, and also count all the todos that match the conditions.”
         const itemsQuery = tx
           .select()
           .from(todosTable)

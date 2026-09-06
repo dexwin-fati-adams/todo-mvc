@@ -51,6 +51,7 @@ export const StatusQuerySchema = z
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
   })
+  //strict() rejects extra fields that aren't defined. 
   .strict();
 export type StatusQuery = z.infer<typeof StatusQuerySchema>;
 
@@ -59,6 +60,7 @@ export const TODO_STATUSES = {
   active: "active",
   completed: "completed",
 } as const satisfies Record<Status, Status>;
+//Universally Unique Identifier
 
 export const TodoIdParamSchema = z.object({ id: z.string().uuid() });
 export type TodoIdParam = z.infer<typeof TodoIdParamSchema>;
