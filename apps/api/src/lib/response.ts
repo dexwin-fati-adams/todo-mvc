@@ -26,8 +26,7 @@ export function sendValidated<T>(options: {
     fallback = DEFAULT_SERVICE_UNAVAILABLE_FALLBACK,
   } = options;
 
-
-  //Check the response with Zod. If it's wrong, log the error and return 503. 
+  //Check the response with Zod. If it's wrong, log the error and return 503.
   // If it's correct, send the response.
   const v = schema.safeParse(body);
   if (!v.success) {

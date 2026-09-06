@@ -5,7 +5,6 @@ import {
   TodoIdParamSchema,
   TodoListResponseSchema,
   TodoSchema,
-
 } from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
@@ -23,7 +22,7 @@ function toMatchable<T, E>(result: Result<T, E>) {
     (error) => ({ ok: false as const, error }),
   );
 }
-// I will explain it in my own terms when the user input is wrong , Zod shows the error and turn it into a Simple message for the Api and what is returning is a string of Zod errrors make it 
+// I will explain it in my own terms when the user input is wrong , Zod shows the error and turn it into a Simple message for the Api and what is returning is a string of Zod errrors make it
 // readable for the api simple put
 function formatZodIssues(issues: { path: (string | number)[]; message: string }[]): string {
   return issues
@@ -41,9 +40,9 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
     }
-//This code is using ts-pattern to handle all possible results.
-//The result can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive() 
-// makes sure we handle all possible cases.
+    //This code is using ts-pattern to handle all possible results.
+    //The result can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
+    // makes sure we handle all possible cases.
     const result = await todoService.createTodo(body.data.title);
     return match(toMatchable(result))
       .with({ ok: true }, ({ value }) =>
@@ -81,7 +80,7 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
-//These are the inputs/parameters you're giving to listTodos
+    //These are the inputs/parameters you're giving to listTodos
     const result = await todoService.listTodos(
       query.data.status,
       query.data.search,
@@ -132,6 +131,4 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       })
       .exhaustive();
   });
-
-  
 }

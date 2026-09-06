@@ -51,13 +51,12 @@ export function createTodoRepository(db: Db): TodoRepository {
           .with("all", () => undefined)
           .exhaustive();
 
-          //Give me todos matching this status AND containing this search word.
+        //Give me todos matching this status AND containing this search word.
         const searchCondition = search ? ilike(todosTable.title, `%${search}%`) : undefined;
 
         const whereCondition = and(statusCondition, searchCondition);
 
-      
-       //Get the todos for the current page, and also count all the todos that match the conditions.”
+        //Get the todos for the current page, and also count all the todos that match the conditions.”
         const itemsQuery = tx
           .select()
           .from(todosTable)

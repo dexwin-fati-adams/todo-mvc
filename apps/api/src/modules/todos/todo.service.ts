@@ -7,7 +7,7 @@ import { TodoErrors, type TodoError } from "./todo.errors.js";
 import type { Todo, TodoListResponse, Status } from "contracts";
 import type { TodoDbRow } from "@/lib/schema.js";
 
-//Take the Todo data from the database and convert it into the Todo format we use in the API. 
+//Take the Todo data from the database and convert it into the Todo format we use in the API.
 // The createdAt Date is converted into a string
 
 function rowToTodo(row: TodoDbRow): Todo {
@@ -87,7 +87,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
       // search, and page. The real page of results comes from the second,
       // filtered call.
 
-      //  Number.MAX_SAFE_INTEGER It's simply a very large safe JavaScript number being used as the page size to effectively 
+      //  Number.MAX_SAFE_INTEGER It's simply a very large safe JavaScript number being used as the page size to effectively
       // get all the todos.
       return repo.findAll("all", undefined, 1, Number.MAX_SAFE_INTEGER).andThen((allResult) =>
         repo.findAll(status, search, page, pageSize).map((filteredResult) => {

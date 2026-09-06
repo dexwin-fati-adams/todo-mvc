@@ -51,7 +51,7 @@ export const StatusQuerySchema = z
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
   })
-  //strict() rejects extra fields that aren't defined. 
+  //strict() rejects extra fields that aren't defined.
   .strict();
 export type StatusQuery = z.infer<typeof StatusQuerySchema>;
 
