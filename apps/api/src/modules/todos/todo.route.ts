@@ -5,7 +5,6 @@ import {
   TodoIdParamSchema,
   TodoListResponseSchema,
   TodoSchema,
-  UpdateTodoRequestSchema,
 } from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
@@ -133,66 +132,5 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       .exhaustive();
   });
 
-  fastify.patch("/todos/:id", {}, async (request, reply) => {
-    const params = TodoIdParamSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply
-        .status(400)
-        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
-    }
-
-    const body = UpdateTodoRequestSchema.safeParse(request.body);
-    if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
-    }
-
-    const result = await todoService.updateTodo(params.data.id, body.data);
-    return match(toMatchable(result))
-      .with({ ok: true }, ({ value }) =>
-        sendValidated({
-          schema: TodoSchema,
-          body: value,
-          status: 200,
-          reply,
-          request,
-          context: "todos/update/200",
-        }),
-      )
-      .with({ ok: false }, ({ error }) => {
-        const { status, body: errorBody } = toHttpError(error);
-        return reply.status(status).send(errorBody);
-      })
-      .exhaustive();
-  });
-
-  fastify.delete("/todos/:id", {}, async (request, reply) => {
-    const params = TodoIdParamSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply
-        .status(400)
-        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
-    }
-
-    const result = await todoService.deleteTodo(params.data.id);
-    return match(toMatchable(result))
-      .with({ ok: true }, () => reply.status(204).send())
-      .with({ ok: false }, ({ error }) => {
-        const { status, body } = toHttpError(error);
-        return reply.status(status).send(body);
-      })
-      .exhaustive();
-  });
-
-  fastify.delete("/todos/completed", {}, async (_request, reply) => {
-    const result = await todoService.clearCompleted();
-    return match(toMatchable(result))
-      .with({ ok: true }, () => reply.status(204).send())
-      .with({ ok: false }, ({ error }) => {
-        const { status, body } = toHttpError(error);
-        return reply.status(status).send(body);
-      })
-      .exhaustive();
-  });
+  
 }
