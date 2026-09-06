@@ -2,10 +2,8 @@ import type { FastifyInstance } from "fastify";
 import {
   CreateTodoRequestSchema,
   StatusQuerySchema,
-  TodoIdParamSchema,
   TodoListResponseSchema,
   TodoSchema,
-  UpdateTodoRequestSchema,
 } from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
@@ -23,7 +21,8 @@ function toMatchable<T, E>(result: Result<T, E>) {
     (error) => ({ ok: false as const, error }),
   );
 }
-
+// I will explain it in my own terms when the user input is wrong , Zod shows the error and turn it into a Simple message for the Api and what is returning is a string of Zod errrors make it
+// readable for the api simple put
 function formatZodIssues(issues: { path: (string | number)[]; message: string }[]): string {
   return issues
     .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
@@ -40,7 +39,9 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
     }
-
+    //This code is using ts-pattern to handle all possible results.
+    //The result can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
+    // makes sure we handle all possible cases.
     const result = await todoService.createTodo(body.data.title);
     return match(toMatchable(result))
       .with({ ok: true }, ({ value }) =>
@@ -78,7 +79,7 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
-
+    //These are the inputs/parameters you're giving to listTodos
     const result = await todoService.listTodos(
       query.data.status,
       query.data.search,
@@ -96,69 +97,6 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
           context: "todos/list/200",
         }),
       )
-      .with({ ok: false }, ({ error }) => {
-        const { status, body } = toHttpError(error);
-        return reply.status(status).send(body);
-      })
-      .exhaustive();
-  });
-
-  fastify.patch("/todos/:id", {}, async (request, reply) => {
-    const params = TodoIdParamSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply
-        .status(400)
-        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
-    }
-
-    const body = UpdateTodoRequestSchema.safeParse(request.body);
-    if (!body.success) {
-      return reply
-        .status(400)
-        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
-    }
-
-    const result = await todoService.updateTodo(params.data.id, body.data);
-    return match(toMatchable(result))
-      .with({ ok: true }, ({ value }) =>
-        sendValidated({
-          schema: TodoSchema,
-          body: value,
-          status: 200,
-          reply,
-          request,
-          context: "todos/update/200",
-        }),
-      )
-      .with({ ok: false }, ({ error }) => {
-        const { status, body: errorBody } = toHttpError(error);
-        return reply.status(status).send(errorBody);
-      })
-      .exhaustive();
-  });
-
-  fastify.delete("/todos/completed", {}, async (_req, reply) => {
-    const result = await todoService.clearCompleted();
-    return match(toMatchable(result))
-      .with({ ok: true }, () => reply.status(204).send())
-      .with({ ok: false }, ({ error }) => {
-        const { status, body } = toHttpError(error);
-        return reply.status(status).send(body);
-      })
-      .exhaustive();
-  });
-
-  fastify.delete("/todos/:id", {}, async (request, reply) => {
-    const params = TodoIdParamSchema.safeParse(request.params);
-    if (!params.success) {
-      return reply
-        .status(400)
-        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
-    }
-
-    const result = await todoService.deleteTodo(params.data.id);
-    return match(toMatchable(result))
-      .with({ ok: true }, () => reply.status(204).send())
       .with({ ok: false }, ({ error }) => {
         const { status, body } = toHttpError(error);
         return reply.status(status).send(body);
