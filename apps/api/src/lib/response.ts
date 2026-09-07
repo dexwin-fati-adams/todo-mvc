@@ -13,6 +13,7 @@ export function sendValidated<T>(options: {
   reply: FastifyReply;
   request: FastifyRequest;
   context: string;
+  //fallback is an optional object that contains an error and a message.
   fallback?: { error: "SERVICE_UNAVAILABLE"; message: string };
 }) {
   const {
@@ -25,6 +26,8 @@ export function sendValidated<T>(options: {
     fallback = DEFAULT_SERVICE_UNAVAILABLE_FALLBACK,
   } = options;
 
+  //Check the response with Zod. If it's wrong, log the error and return 503.
+  // If it's correct, send the response.
   const v = schema.safeParse(body);
   if (!v.success) {
     request.log.error({ context, issues: v.error.issues }, "response validation failed");

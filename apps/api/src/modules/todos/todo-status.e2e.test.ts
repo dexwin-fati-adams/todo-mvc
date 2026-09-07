@@ -225,3 +225,52 @@ describe("GET /todos — pagination query handling (real app, real database)", (
     expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 });
+
+describe("GET /todos/:id — single todo lookup (real app, real database)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("../../app.js");
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.inject({ method: "DELETE", url: "/todos/completed" });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("returns the todo when it exists", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({ method: "GET", url: `/todos/${id}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().id).toBe(id);
+    expect(res.json().title).toBe("Buy milk");
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("returns 404 for a well-formed but nonexistent id", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/todos/00000000-0000-0000-0000-000000000099",
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+  });
+
+  it("returns 400 for an invalid uuid", async () => {
+    const res = await app.inject({ method: "GET", url: "/todos/not-a-uuid" });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+});

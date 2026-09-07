@@ -224,6 +224,59 @@ describe("findAll", () => {
   });
 });
 
+// ─── findById ─────────────────────────────────────────────────────────────────
+
+describe("findById", () => {
+  it("returns the row when found", async () => {
+    const row = makeRow({ id: "1" });
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([row]),
+        }),
+      }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.findById("1");
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap().id).toBe("1");
+  });
+
+  it("returns TODO_NOT_FOUND when no rows match", async () => {
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.findById("99");
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_NOT_FOUND");
+  });
+
+  it("returns TODO_DB_ERROR when the query throws", async () => {
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockRejectedValue(new Error("db down")),
+        }),
+      }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.findById("1");
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
+  });
+});
+
 // ─── insert ───────────────────────────────────────────────────────────────────
 
 describe("insert", () => {

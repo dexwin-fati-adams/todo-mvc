@@ -12,6 +12,7 @@ export const todosTable = pgTable(
     completedIdx: index("todos_completed_idx").on(table.completed),
   }),
 );
-
+//TodoDbRow is the type of a Todo coming FROM the database.
 export type TodoDbRow = typeof todosTable.$inferSelect;
+//NewTodoDbRow is the type of a Todo going TO the database.
 export type NewTodoDbRow = typeof todosTable.$inferInsert;

@@ -4,6 +4,7 @@ import { z } from "zod";
 const configSchema = z.object({
   DATABASE_URL: z.string(),
   PORT: z.coerce.number(),
+  //HOST tells your backend which network address the server should listen on.
   HOST: z.string(),
   CORS_ORIGIN: z.string(),
 });
