@@ -274,3 +274,79 @@ describe("GET /todos/:id — single todo lookup (real app, real database)", () =
     expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 });
+
+describe("PATCH /todos/:id — update todo (real app, real database)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("../../app.js");
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.inject({ method: "DELETE", url: "/todos/completed" });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("updates a todo when it exists", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/todos/${id}`,
+      payload: { title: "Buy eggs" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe("Buy eggs");
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("returns 404 for a well-formed but nonexistent id", async () => {
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/todos/00000000-0000-0000-0000-000000000099",
+      payload: { title: "Buy eggs" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+  });
+
+  it("returns 400 for an invalid uuid", async () => {
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/todos/not-a-uuid",
+      payload: { title: "Buy eggs" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when body validation fails", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/todos/${id}`,
+      payload: { title: "" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+});

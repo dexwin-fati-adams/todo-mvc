@@ -234,3 +234,88 @@ describe("POST /todos", () => {
     expect(res.statusCode).toBe(503);
   });
 });
+
+// ─── PATCH /todos/:id ─────────────────────────────────────────────────────────
+
+describe("PATCH /todos/:id", () => {
+  const validId = "00000000-0000-0000-0000-000000000001";
+
+  it("returns 200 with updated todo", async () => {
+    const todo = makeTodo({ title: "Buy eggs" });
+    const { fastify, service } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe("Buy eggs");
+    expect(service.updateTodo).toHaveBeenCalledWith(validId, { title: "Buy eggs" });
+  });
+
+  it("returns 400 for invalid uuid", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: "/todos/not-a-uuid",
+      payload: { title: "Buy eggs" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 when title is empty string", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 404 when todo not found", async () => {
+    const { fastify } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(err(TodoErrors.notFound(validId)))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs" },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+  });
+
+  it("returns 503 on db error", async () => {
+    const { fastify } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs" },
+    });
+
+    expect(res.statusCode).toBe(503);
+  });
+});
