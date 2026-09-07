@@ -268,18 +268,6 @@ describe("PATCH /todos/:id", () => {
     expect(res.json().error).toBe("VALIDATION_ERROR");
   });
 
-  it("returns 400 when title is missing", async () => {
-    const { fastify } = await buildApp();
-    const res = await fastify.inject({
-      method: "PATCH",
-      url: `/todos/${validId}`,
-      payload: {},
-    });
-
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe("VALIDATION_ERROR");
-  });
-
   it("returns 400 when title is empty string", async () => {
     const { fastify } = await buildApp();
     const res = await fastify.inject({

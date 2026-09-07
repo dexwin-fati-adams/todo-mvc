@@ -18,4 +18,5 @@ export const config = {
   corsOrigin: parsed.CORS_ORIGIN,
 };
 
+//Config is a TypeScript type automatically created from the config object.z
 export type Config = typeof config;

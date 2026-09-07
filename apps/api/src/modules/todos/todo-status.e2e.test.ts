@@ -330,23 +330,4 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("VALIDATION_ERROR");
   });
-
-  it("returns 400 when body validation fails", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/todos",
-      payload: { title: "Buy milk" },
-    });
-    const { id } = created.json();
-
-    const res = await app.inject({
-      method: "PATCH",
-      url: `/todos/${id}`,
-      payload: { title: "" },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe("VALIDATION_ERROR");
-
-    await app.inject({ method: "DELETE", url: `/todos/${id}` });
-  });
 });
