@@ -344,9 +344,7 @@ describe("update", () => {
     await repo.update("1", { title: "Updated title" });
 
     expect(set).toHaveBeenCalledWith({ title: "Updated title" });
-    expect(set).not.toHaveBeenCalledWith(
-      expect.objectContaining({ completed: expect.anything() }),
-    );
+    expect(set).not.toHaveBeenCalledWith(expect.objectContaining({ completed: expect.anything() }));
   });
 
   it("returns TODO_NOT_FOUND when no rows returned", async () => {

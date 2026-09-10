@@ -14,10 +14,16 @@ export const CreateTodoRequestSchema = z.object({
 });
 export type CreateTodoRequest = z.infer<typeof CreateTodoRequestSchema>;
 
-export const UpdateTodoRequestSchema = z.object({
-  title: z.string().min(1, "Title cannot be empty").optional(),
-  completed: z.boolean().optional(),
-});
+export const UpdateTodoRequestSchema = z
+  .object({
+    title: z.string().min(1, "Title cannot be empty").optional(),
+    completed: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (obj) => obj.title !== undefined || obj.completed !== undefined,
+    "At least one of title or completed must be provided",
+  );
 export type UpdateTodoRequest = z.infer<typeof UpdateTodoRequestSchema>;
 
 export const TodoListResponseSchema = z.object({
