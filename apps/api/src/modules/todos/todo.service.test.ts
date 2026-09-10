@@ -258,7 +258,7 @@ describe("updateTodo", () => {
     repo = makeMockRepository();
   });
 
-  it("updates todo title", async () => {
+  it("updates todo title only", async () => {
     const row = makeRow({ id: "todo-1", title: "New Title" });
     vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
@@ -269,10 +269,12 @@ describe("updateTodo", () => {
     if (result.isOk()) {
       expect(result.value.title).toBe("New Title");
     }
+    // Exactly `{ title }` — no `completed` key at all, so the repository
+    // (and DB) has no way of touching that field.
     expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { title: "New Title" });
   });
 
-  it("updates todo completed status", async () => {
+  it("updates todo completed status only", async () => {
     const row = makeRow({ id: "todo-1", completed: true });
     vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
@@ -284,6 +286,18 @@ describe("updateTodo", () => {
       expect(result.value.completed).toBe(true);
     }
     expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { completed: true });
+  });
+
+  it("includes completed:false explicitly when it is the sent value", async () => {
+    // Regression guard against a `!patch.completed` style check, which would
+    // wrongly treat an explicit `false` the same as "not provided" and drop it.
+    const row = makeRow({ id: "todo-1", completed: false });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    await service.updateTodo("todo-1", { completed: false });
+
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { completed: false });
   });
 
   it("updates both title and completed status", async () => {
@@ -310,7 +324,7 @@ describe("updateTodo", () => {
     expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { title: "Trimmed" });
   });
 
-  it("returns EMPTY_TITLE error for empty title", async () => {
+  it("returns EMPTY_TITLE error for whitespace-only title", async () => {
     const service = createTodoService(repo);
     const result = await service.updateTodo("todo-1", { title: "   " });
 
@@ -318,6 +332,8 @@ describe("updateTodo", () => {
     if (result.isErr()) {
       expect(result.error.type).toBe("TODO_EMPTY_TITLE");
     }
+    // Must fail before ever reaching the repository.
+    expect(vi.mocked(repo.update)).not.toHaveBeenCalled();
   });
 
   it("propagates repository NOT_FOUND error", async () => {

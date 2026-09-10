@@ -50,6 +50,7 @@ async function buildApp(serviceOverrides = {}) {
   await todoRoutes(fastify, { todoService: service as unknown as TodoService });
   return { fastify, service };
 }
+
 // ─── GET /todos ───────────────────────────────────────────────────────────────
 
 describe("GET /todos", () => {
@@ -240,7 +241,7 @@ describe("POST /todos", () => {
 describe("PATCH /todos/:id", () => {
   const validId = "00000000-0000-0000-0000-000000000001";
 
-  it("returns 200 with updated todo", async () => {
+  it("returns 200 with updated todo when only title is sent", async () => {
     const todo = makeTodo({ title: "Buy eggs" });
     const { fastify, service } = await buildApp({
       updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
@@ -253,7 +254,44 @@ describe("PATCH /todos/:id", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().title).toBe("Buy eggs");
+    // Only the sent field should reach the service — proves PATCH doesn't
+    // synthesize a full replacement payload the way PUT would.
     expect(service.updateTodo).toHaveBeenCalledWith(validId, { title: "Buy eggs" });
+  });
+
+  it("returns 200 with updated todo when only completed is sent", async () => {
+    const todo = makeTodo({ completed: true });
+    const { fastify, service } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { completed: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().completed).toBe(true);
+    expect(service.updateTodo).toHaveBeenCalledWith(validId, { completed: true });
+  });
+
+  it("returns 200 with updated todo when title and completed are both sent", async () => {
+    const todo = makeTodo({ title: "Buy eggs", completed: true });
+    const { fastify, service } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs", completed: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: "Buy eggs", completed: true });
+    expect(service.updateTodo).toHaveBeenCalledWith(validId, {
+      title: "Buy eggs",
+      completed: true,
+    });
   });
 
   it("returns 400 for invalid uuid", async () => {
@@ -278,6 +316,46 @@ describe("PATCH /todos/:id", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 for an empty object body", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    // Must fail before reaching the service — an empty patch is never a valid intent.
+    expect(service.updateTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for unknown fields", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { archived: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.updateTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for unknown fields even alongside a valid field", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs", archived: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.updateTodo).not.toHaveBeenCalled();
   });
 
   it("returns 404 when todo not found", async () => {

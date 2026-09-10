@@ -126,7 +126,6 @@ describe("GET /todos — search query handling (real app, real database)", () =>
     });
     const { id } = created.json();
 
-    // "Buy milk" is active, not completed — searching completed+milk should return nothing
     const res = await app.inject({
       method: "GET",
       url: "/todos?status=completed&search=milk",
@@ -134,7 +133,6 @@ describe("GET /todos — search query handling (real app, real database)", () =>
     expect(res.statusCode).toBe(200);
     expect(res.json().todos).toEqual([]);
 
-    // cleanup: this todo won't be caught by the afterEach (only clears completed)
     await app.inject({ method: "DELETE", url: `/todos/${id}` });
   });
 });
@@ -185,7 +183,6 @@ describe("GET /todos — pagination query handling (real app, real database)", (
     expect(body.totalItems).toBeGreaterThanOrEqual(3);
     expect(body.totalPages).toBe(Math.ceil(body.totalItems / 2));
 
-    // cleanup: these active todos won't be caught by the afterEach (only clears completed)
     for (const todo of body.todos as { id: string }[]) {
       await app.inject({ method: "DELETE", url: `/todos/${todo.id}` });
     }
@@ -292,7 +289,35 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
     await app.close();
   });
 
-  it("updates a todo when it exists", async () => {
+  it("updates the title only, leaving completed untouched", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    // Flip completed to true first via a separate PATCH, so we can prove
+    // a later title-only PATCH does NOT reset it back to false.
+    await app.inject({ method: "PATCH", url: `/todos/${id}`, payload: { completed: true } });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/todos/${id}`,
+      payload: { title: "Buy eggs" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe("Buy eggs");
+    expect(res.json().completed).toBe(true); // preserved, not reset
+
+    // Confirm via a fresh GET too, not just the PATCH response.
+    const getRes = await app.inject({ method: "GET", url: `/todos/${id}` });
+    expect(getRes.json()).toMatchObject({ title: "Buy eggs", completed: true });
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("updates completed only, leaving title untouched", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/todos",
@@ -303,10 +328,67 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
     const res = await app.inject({
       method: "PATCH",
       url: `/todos/${id}`,
-      payload: { title: "Buy eggs" },
+      payload: { completed: true },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().title).toBe("Buy eggs");
+    expect(res.json()).toMatchObject({ title: "Buy milk", completed: true });
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("updates title and completed together in one request", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/todos/${id}`,
+      payload: { title: "Buy eggs", completed: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: "Buy eggs", completed: true });
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("rejects an empty object body", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({ method: "PATCH", url: `/todos/${id}`, payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+
+    // The todo must be completely unchanged by the rejected request.
+    const getRes = await app.inject({ method: "GET", url: `/todos/${id}` });
+    expect(getRes.json()).toMatchObject({ title: "Buy milk", completed: false });
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("rejects unknown fields", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/todos/${id}`,
+      payload: { archived: true },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
 
     await app.inject({ method: "DELETE", url: `/todos/${id}` });
   });

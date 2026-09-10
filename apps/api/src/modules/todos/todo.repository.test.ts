@@ -15,10 +15,6 @@ function makeRow(overrides: Partial<TodoDbRow> = {}): TodoDbRow {
   };
 }
 
-// findAll now runs two queries: an items query (select -> from -> where ->
-// orderBy -> limit -> offset) and a count query (select -> from -> where).
-// This helper mocks db.select so the first call returns the items query
-// chain, and the second call returns the count query chain.
 function makeFindAllDb(items: TodoDbRow[], totalCount: number): Db {
   const itemsChain = {
     from: vi.fn().mockReturnValue({
@@ -117,7 +113,6 @@ describe("findAll", () => {
   });
 
   it("returns totalItems based on the full matching set, not just the page size", async () => {
-    // Page 1 with pageSize 2 returns only 2 items, but 5 todos match in total.
     const rows = [makeRow({ id: "1" }), makeRow({ id: "2" })];
     const db = makeFindAllDb(rows, 5);
 
@@ -130,7 +125,6 @@ describe("findAll", () => {
   });
 
   it("returns an empty items list for a page beyond the last real page, with totalItems still correct", async () => {
-    // Only 3 todos exist, but page 5 is requested.
     const db = makeFindAllDb([], 3);
 
     const repo = createTodoRepository(db);
@@ -162,7 +156,6 @@ describe("findAll", () => {
     const db = { select } as unknown as Db;
 
     const repo = createTodoRepository(db);
-    // page 3, pageSize 5 → offset should be (3 - 1) * 5 = 10
     await repo.findAll("all", undefined, 3, 5);
 
     expect(limit).toHaveBeenCalledWith(5);
@@ -333,6 +326,27 @@ describe("update", () => {
 
     expect(result.isOk()).toBe(true);
     expect(result._unsafeUnwrap().title).toBe("Updated title");
+  });
+
+  it("sends only the given fields to the query, not the full row", async () => {
+    // Regression guard: if someone later refactors this to spread a full
+    // Todo/TodoDbRow into `set`, a title-only PATCH would silently reset
+    // `completed` and `id`. This asserts `set` receives exactly what was passed.
+    const updated = makeRow({ title: "Updated title" });
+    const set = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([updated]),
+      }),
+    });
+    const db = { update: vi.fn().mockReturnValue({ set }) } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    await repo.update("1", { title: "Updated title" });
+
+    expect(set).toHaveBeenCalledWith({ title: "Updated title" });
+    expect(set).not.toHaveBeenCalledWith(
+      expect.objectContaining({ completed: expect.anything() }),
+    );
   });
 
   it("returns TODO_NOT_FOUND when no rows returned", async () => {
