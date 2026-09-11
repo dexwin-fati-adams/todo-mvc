@@ -23,7 +23,8 @@ function toMatchable<T, E>(result: Result<T, E>) {
     (value) => ({ ok: true as const, value }),
     (error) => ({ ok: false as const, error }),
   );
-}
+} // I will explain it in my own terms when the user input is wrong , Zod shows the error...
+// readable for the api simple put
 
 function formatZodIssues(issues: { path: (string | number)[]; message: string }[]): string {
   return issues

@@ -85,6 +85,10 @@ export interface TodoService {
   clearCompleted(): ResultAsync<void, TodoError>;
 }
 
+//This code is using ts-pattern to handle all possible results.
+//The result can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
+// makes sure we handle all possible cases.
+
 export function createTodoService(repo: TodoRepository): TodoService {
   return {
     createTodo(rawTitle: string): ResultAsync<Todo, TodoError> {

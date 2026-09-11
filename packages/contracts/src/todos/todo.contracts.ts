@@ -54,6 +54,9 @@ export type TodoListResponse = z.infer<typeof TodoListResponseSchema>;
 const StatusEnum = z.enum(["all", "active", "completed"]);
 export type Status = z.infer<typeof StatusEnum>;
 
+// It validates the status, search, page, and pageSize query parameters for
+// GET /todos. status defaults to all, search is optional (non-blank, max 100
+// chars), page defaults to 1, and pageSize defaults to 20 (max 100).
 export const StatusQuerySchema = z
   .object({
     status: StatusEnum.default("all"),
@@ -63,9 +66,13 @@ export const StatusQuerySchema = z
       .min(1, "Search cannot be blank")
       .max(100, "Search must be 100 characters or fewer")
       .optional(),
+
+    //corce.number() converts the value to a number if possible, otherwise it will throw an error and it fromone type to the other
+    //page = which page u want to get, pageSize = how many items per page
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
   })
+  //strict() rejects extra fields that aren't defined.
   .strict();
 export type StatusQuery = z.infer<typeof StatusQuerySchema>;
 
@@ -75,6 +82,7 @@ export const TODO_STATUSES = {
   completed: "completed",
 } as const satisfies Record<Status, Status>;
 
+//Universally Unique Identifier
 export const TodoIdParamSchema = z.object({ id: z.string().uuid() });
 export type TodoIdParam = z.infer<typeof TodoIdParamSchema>;
 
