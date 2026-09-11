@@ -202,4 +202,4 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       })
       .exhaustive();
   });
-} 
+}

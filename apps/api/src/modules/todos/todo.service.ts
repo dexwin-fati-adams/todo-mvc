@@ -25,7 +25,6 @@ type ResolvedPatch = Partial<Pick<TodoDbRow, "title" | "completed">>;
 //PatchState tells us what happened after checking the PATCH request.
 type PatchState = { type: "EMPTY_TITLE" } | { type: "VALID"; resolved: ResolvedPatch };
 
-
 //resolvePatchState is basically checking the PATCH data and deciding what to do with it.
 function resolvePatch(patch: UpdatePatch): Result<ResolvedPatch, TodoError> {
   const state: PatchState = match(patch)
@@ -47,15 +46,14 @@ function resolvePatch(patch: UpdatePatch): Result<ResolvedPatch, TodoError> {
     .exhaustive();
 }
 
-
 //ReplaceState tells us whether the PUT data is valid or has an empty title.
 type ReplaceState =
-  | { type: "EMPTY_TITLE" }
-  | { type: "VALID"; resolved: Pick<TodoDbRow, "title" | "completed"> };
+  { type: "EMPTY_TITLE" } | { type: "VALID"; resolved: Pick<TodoDbRow, "title" | "completed"> };
 
- 
- //Check the PUT data, clean the title, and either return an error or return the cleaned data.
-function resolveReplace(payload: ReplacePayload): Result<Pick<TodoDbRow, "title" | "completed">, TodoError> {
+//Check the PUT data, clean the title, and either return an error or return the cleaned data.
+function resolveReplace(
+  payload: ReplacePayload,
+): Result<Pick<TodoDbRow, "title" | "completed">, TodoError> {
   const trimmedTitle = payload.title.trim();
 
   const state: ReplaceState =

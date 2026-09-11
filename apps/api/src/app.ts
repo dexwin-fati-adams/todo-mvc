@@ -16,9 +16,9 @@ export async function buildApp() {
 
   // Cross-cutting concerns via plugin
   await fastify.register(cors, {
-  origin: config.corsOrigin,
-  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-});
+    origin: config.corsOrigin,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  });
   // Dependency wiring — built once at startup, injected into modules
   const db = createDb(config);
   const todoRepo = createTodoRepository(db);
