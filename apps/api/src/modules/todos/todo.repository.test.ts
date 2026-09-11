@@ -347,6 +347,25 @@ describe("update", () => {
     expect(set).not.toHaveBeenCalledWith(expect.objectContaining({ completed: expect.anything() }));
   });
 
+  it("updates both title and completed together in a single call", async () => {
+    // This is the exact shape PUT/replaceTodo sends — both keys at once,
+    // unlike PATCH which sends whichever subset the client provided.
+    const updated = makeRow({ title: "Replaced", completed: true });
+    const set = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        returning: vi.fn().mockResolvedValue([updated]),
+      }),
+    });
+    const db = { update: vi.fn().mockReturnValue({ set }) } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.update("1", { title: "Replaced", completed: true });
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toMatchObject({ title: "Replaced", completed: true });
+    expect(set).toHaveBeenCalledWith({ title: "Replaced", completed: true });
+  });
+
   it("returns TODO_NOT_FOUND when no rows returned", async () => {
     const db = {
       update: vi.fn().mockReturnValue({

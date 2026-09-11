@@ -269,8 +269,6 @@ describe("updateTodo", () => {
     if (result.isOk()) {
       expect(result.value.title).toBe("New Title");
     }
-    // Exactly `{ title }` — no `completed` key at all, so the repository
-    // (and DB) has no way of touching that field.
     expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", { title: "New Title" });
   });
 
@@ -289,8 +287,6 @@ describe("updateTodo", () => {
   });
 
   it("includes completed:false explicitly when it is the sent value", async () => {
-    // Regression guard against a `!patch.completed` style check, which would
-    // wrongly treat an explicit `false` the same as "not provided" and drop it.
     const row = makeRow({ id: "todo-1", completed: false });
     vi.mocked(repo.update).mockReturnValue(okAsync(row));
 
@@ -332,7 +328,6 @@ describe("updateTodo", () => {
     if (result.isErr()) {
       expect(result.error.type).toBe("TODO_EMPTY_TITLE");
     }
-    // Must fail before ever reaching the repository.
     expect(vi.mocked(repo.update)).not.toHaveBeenCalled();
   });
 
@@ -346,6 +341,100 @@ describe("updateTodo", () => {
     expect(result.isErr()).toBe(true);
     if (result.isErr()) {
       expect(result.error.type).toBe("TODO_NOT_FOUND");
+    }
+  });
+});
+
+// ─── replaceTodo ──────────────────────────────────────────────────────────────
+
+describe("replaceTodo", () => {
+  let repo: TodoRepository;
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("replaces both title and completed", async () => {
+    const row = makeRow({ id: "todo-1", title: "Replaced", completed: true });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    const result = await service.replaceTodo("todo-1", { title: "Replaced", completed: true });
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value.title).toBe("Replaced");
+      expect(result.value.completed).toBe(true);
+    }
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", {
+      title: "Replaced",
+      completed: true,
+    });
+  });
+
+  it("trims title whitespace", async () => {
+    const row = makeRow({ title: "Trimmed" });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    await service.replaceTodo("todo-1", { title: "  Trimmed  ", completed: false });
+
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", {
+      title: "Trimmed",
+      completed: false,
+    });
+  });
+
+  it("always sends both fields to the repository, even when completed is false", async () => {
+    const row = makeRow({ title: "x", completed: false });
+    vi.mocked(repo.update).mockReturnValue(okAsync(row));
+
+    const service = createTodoService(repo);
+    await service.replaceTodo("todo-1", { title: "x", completed: false });
+
+    // Unlike updateTodo, a replace always carries both keys — there is no
+    // "only send what changed" behavior here, by design.
+    expect(vi.mocked(repo.update)).toHaveBeenCalledWith("todo-1", {
+      title: "x",
+      completed: false,
+    });
+  });
+
+  it("returns EMPTY_TITLE error for whitespace-only title", async () => {
+    const service = createTodoService(repo);
+    const result = await service.replaceTodo("todo-1", { title: "   ", completed: true });
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_EMPTY_TITLE");
+    }
+    expect(vi.mocked(repo.update)).not.toHaveBeenCalled();
+  });
+
+  it("propagates repository NOT_FOUND error and does not create a row", async () => {
+    const notFoundError = TodoErrors.notFound("ghost-id");
+    vi.mocked(repo.update).mockReturnValue(errAsync(notFoundError));
+
+    const service = createTodoService(repo);
+    const result = await service.replaceTodo("ghost-id", { title: "x", completed: false });
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_NOT_FOUND");
+    }
+    expect(vi.mocked(repo.insert)).not.toHaveBeenCalled();
+  });
+
+  it("propagates repository db errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("db down"));
+    vi.mocked(repo.update).mockReturnValue(errAsync(dbError));
+
+    const service = createTodoService(repo);
+    const result = await service.replaceTodo("todo-1", { title: "x", completed: false });
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_DB_ERROR");
     }
   });
 });

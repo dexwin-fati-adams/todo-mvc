@@ -272,6 +272,152 @@ describe("GET /todos/:id — single todo lookup (real app, real database)", () =
   });
 });
 
+describe("PUT /todos/:id — replace todo (real app, real database)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("../../app.js");
+    app = await buildApp();
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.inject({ method: "DELETE", url: "/todos/completed" });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("replaces both fields when the todo exists", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/todos/${id}`,
+      payload: { title: "Buy eggs", completed: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: "Buy eggs", completed: true });
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("rejects a partial body — same payload PATCH would accept", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/todos/${id}`,
+      payload: { title: "Only title" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+
+    const putRes = await app.inject({
+      method: "PUT",
+      url: `/todos/${id}`,
+      payload: { title: "Only title" },
+    });
+    expect(putRes.statusCode).toBe(400);
+    expect(putRes.json().error).toBe("VALIDATION_ERROR");
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("rejects an empty object body", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({ method: "PUT", url: `/todos/${id}`, payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("rejects unknown fields", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/todos/${id}`,
+      payload: { title: "x", completed: false, archived: true },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("rejects client-supplied id and createdAt", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const resId = await app.inject({
+      method: "PUT",
+      url: `/todos/${id}`,
+      payload: { title: "x", completed: false, id: "00000000-0000-0000-0000-000000000099" },
+    });
+    expect(resId.statusCode).toBe(400);
+
+    const resCreatedAt = await app.inject({
+      method: "PUT",
+      url: `/todos/${id}`,
+      payload: { title: "x", completed: false, createdAt: "2024-01-01T00:00:00Z" },
+    });
+    expect(resCreatedAt.statusCode).toBe(400);
+
+    await app.inject({ method: "DELETE", url: `/todos/${id}` });
+  });
+
+  it("returns 404 for a well-formed but nonexistent id, and does not create it", async () => {
+    const missingId = "00000000-0000-0000-0000-000000000099";
+    const res = await app.inject({
+      method: "PUT",
+      url: `/todos/${missingId}`,
+      payload: { title: "Ghost", completed: false },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+
+    const getRes = await app.inject({ method: "GET", url: `/todos/${missingId}` });
+    expect(getRes.statusCode).toBe(404);
+  });
+
+  it("returns 400 for an invalid uuid", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/todos/not-a-uuid",
+      payload: { title: "x", completed: false },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+});
+
 describe("PATCH /todos/:id — update todo (real app, real database)", () => {
   let app: FastifyInstance;
 
@@ -297,8 +443,6 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
     });
     const { id } = created.json();
 
-    // Flip completed to true first via a separate PATCH, so we can prove
-    // a later title-only PATCH does NOT reset it back to false.
     await app.inject({ method: "PATCH", url: `/todos/${id}`, payload: { completed: true } });
 
     const res = await app.inject({
@@ -308,9 +452,8 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().title).toBe("Buy eggs");
-    expect(res.json().completed).toBe(true); // preserved, not reset
+    expect(res.json().completed).toBe(true);
 
-    // Confirm via a fresh GET too, not just the PATCH response.
     const getRes = await app.inject({ method: "GET", url: `/todos/${id}` });
     expect(getRes.json()).toMatchObject({ title: "Buy eggs", completed: true });
 
@@ -367,7 +510,6 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("VALIDATION_ERROR");
 
-    // The todo must be completely unchanged by the rejected request.
     const getRes = await app.inject({ method: "GET", url: `/todos/${id}` });
     expect(getRes.json()).toMatchObject({ title: "Buy milk", completed: false });
 
