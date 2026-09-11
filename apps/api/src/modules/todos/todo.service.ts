@@ -85,10 +85,10 @@ export interface TodoService {
   clearCompleted(): ResultAsync<void, TodoError>;
 }
 
-    //This code is using ts-pattern to handle all possible results.
-    //The resul
-    // t can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
-    // makes sure we handle all possible cases.
+//This code is using ts-pattern to handle all possible results.
+//The resul
+// t can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
+// makes sure we handle all possible cases.
 
 export function createTodoService(repo: TodoRepository): TodoService {
   return {
@@ -106,7 +106,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.findById(id).map(rowToTodo);
     },
 
-      //These are the inputs/parameters you're giving to listTodos
+    //These are the inputs/parameters you're giving to listTodos
     listTodos(
       status: Status,
       search: string | undefined,
