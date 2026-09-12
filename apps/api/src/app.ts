@@ -17,11 +17,20 @@ export async function buildApp() {
   // Cross-cutting concerns via plugin
   await fastify.register(cors, {
     origin: config.corsOrigin,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   });
-
   // Dependency wiring — built once at startup, injected into modules
   const db = createDb(config);
+
+  // Ensure the underlying pg Pool is closed when the Fastify instance is
+  // closed (app.close()). Without this, each buildApp() call leaks its
+  // Pool's connections (default max: 10) for the lifetime of the process,
+  // which exhausts Postgres's connection limit across test files that
+  // call buildApp() multiple times.
+  fastify.addHook("onClose", async () => {
+    await db.$client.end();
+  });
+
   const todoRepo = createTodoRepository(db);
   const todoService = createTodoService(todoRepo);
 
