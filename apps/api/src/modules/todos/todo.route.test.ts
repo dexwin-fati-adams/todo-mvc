@@ -38,6 +38,7 @@ function makeService(overrides = {}) {
     getTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     createTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     updateTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
+    replaceTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(makeTodo()))),
     deleteTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
     toggleAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
     clearCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
@@ -50,6 +51,7 @@ async function buildApp(serviceOverrides = {}) {
   await todoRoutes(fastify, { todoService: service as unknown as TodoService });
   return { fastify, service };
 }
+
 // ─── GET /todos ───────────────────────────────────────────────────────────────
 
 describe("GET /todos", () => {
@@ -235,12 +237,164 @@ describe("POST /todos", () => {
   });
 });
 
+// ─── PUT /todos/:id ───────────────────────────────────────────────────────────
+
+describe("PUT /todos/:id", () => {
+  const validId = "00000000-0000-0000-0000-000000000001";
+
+  it("returns 200 with the replaced todo", async () => {
+    const todo = makeTodo({ title: "Replaced", completed: true });
+    const { fastify, service } = await buildApp({
+      replaceTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "Replaced", completed: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: "Replaced", completed: true });
+    expect(service.replaceTodo).toHaveBeenCalledWith(validId, {
+      title: "Replaced",
+      completed: true,
+    });
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { completed: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when completed is missing", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "x" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an empty object", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({ method: "PUT", url: `/todos/${validId}`, payload: {} });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when title is empty string", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "", completed: false },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for unknown fields", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "x", completed: false, archived: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when client supplies id in the body", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "x", completed: false, id: validId },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when client supplies createdAt in the body", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "x", completed: false, createdAt: "2024-01-01T00:00:00Z" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.replaceTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for invalid uuid", async () => {
+    const { fastify } = await buildApp();
+    const res = await fastify.inject({
+      method: "PUT",
+      url: "/todos/not-a-uuid",
+      payload: { title: "x", completed: false },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 404 when todo not found, and does not create it", async () => {
+    const { fastify, service } = await buildApp({
+      replaceTodo: vi.fn(() => Promise.resolve(err(TodoErrors.notFound(validId)))),
+    });
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "x", completed: false },
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+    expect(service.replaceTodo).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 503 on db error", async () => {
+    const { fastify } = await buildApp({
+      replaceTodo: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
+    });
+    const res = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "x", completed: false },
+    });
+
+    expect(res.statusCode).toBe(503);
+  });
+});
+
 // ─── PATCH /todos/:id ─────────────────────────────────────────────────────────
 
 describe("PATCH /todos/:id", () => {
   const validId = "00000000-0000-0000-0000-000000000001";
 
-  it("returns 200 with updated todo", async () => {
+  it("returns 200 with updated todo when only title is sent", async () => {
     const todo = makeTodo({ title: "Buy eggs" });
     const { fastify, service } = await buildApp({
       updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
@@ -254,6 +408,41 @@ describe("PATCH /todos/:id", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().title).toBe("Buy eggs");
     expect(service.updateTodo).toHaveBeenCalledWith(validId, { title: "Buy eggs" });
+  });
+
+  it("returns 200 with updated todo when only completed is sent", async () => {
+    const todo = makeTodo({ completed: true });
+    const { fastify, service } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { completed: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().completed).toBe(true);
+    expect(service.updateTodo).toHaveBeenCalledWith(validId, { completed: true });
+  });
+
+  it("returns 200 with updated todo when title and completed are both sent", async () => {
+    const todo = makeTodo({ title: "Buy eggs", completed: true });
+    const { fastify, service } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs", completed: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: "Buy eggs", completed: true });
+    expect(service.updateTodo).toHaveBeenCalledWith(validId, {
+      title: "Buy eggs",
+      completed: true,
+    });
   });
 
   it("returns 400 for invalid uuid", async () => {
@@ -278,6 +467,45 @@ describe("PATCH /todos/:id", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 400 for an empty object body", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.updateTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for unknown fields", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { archived: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.updateTodo).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for unknown fields even alongside a valid field", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Buy eggs", archived: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.updateTodo).not.toHaveBeenCalled();
   });
 
   it("returns 404 when todo not found", async () => {
@@ -305,5 +533,34 @@ describe("PATCH /todos/:id", () => {
     });
 
     expect(res.statusCode).toBe(503);
+  });
+});
+
+// ─── PATCH vs PUT — route-level contract divergence ────────────────────────────
+
+describe("PATCH vs PUT — route-level divergence", () => {
+  const validId = "00000000-0000-0000-0000-000000000001";
+
+  it("the same partial payload is accepted by PATCH and rejected by PUT", async () => {
+    const todo = makeTodo({ title: "Only title" });
+    const { fastify, service } = await buildApp({
+      updateTodo: vi.fn(() => Promise.resolve(ok(todo))),
+    });
+
+    const patchRes = await fastify.inject({
+      method: "PATCH",
+      url: `/todos/${validId}`,
+      payload: { title: "Only title" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(service.updateTodo).toHaveBeenCalled();
+
+    const putRes = await fastify.inject({
+      method: "PUT",
+      url: `/todos/${validId}`,
+      payload: { title: "Only title" },
+    });
+    expect(putRes.statusCode).toBe(400);
+    expect(service.replaceTodo).not.toHaveBeenCalled();
   });
 });

@@ -14,11 +14,31 @@ export const CreateTodoRequestSchema = z.object({
 });
 export type CreateTodoRequest = z.infer<typeof CreateTodoRequestSchema>;
 
-export const UpdateTodoRequestSchema = z.object({
-  title: z.string().min(1, "Title cannot be empty").optional(),
-  completed: z.boolean().optional(),
-});
+// PATCH — partial update. Both fields optional, but at least one must be present. .strict() rejects anything else, including id/createdAt if a client tries to send them.
+
+export const UpdateTodoRequestSchema = z
+  .object({
+    title: z.string().min(1, "Title cannot be empty").optional(),
+    completed: z.boolean().optional(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one of title or completed must be provided",
+  });
 export type UpdateTodoRequest = z.infer<typeof UpdateTodoRequestSchema>;
+
+// PUT — full replace. Both fields REQUIRED (no .optional()), and .strict()
+// rejects anything else, including id/createdAt if a client tries to send
+// them. This is what makes PUT's contract different from PATCH's: PATCH
+// accepts a subset of these two keys, PUT demands both every time.
+//for PUT, we want to ensure that the client sends both title and completed fields, and that they are valid. The .strict() method ensures that no extra fields are sent, and the .refine() method ensures that at least one of the fields is present.
+export const ReplaceTodoRequestSchema = z
+  .object({
+    title: z.string().min(1, "Title cannot be empty"),
+    completed: z.boolean(),
+  })
+  .strict();
+export type ReplaceTodoRequest = z.infer<typeof ReplaceTodoRequestSchema>;
 
 export const TodoListResponseSchema = z.object({
   todos: z.array(TodoSchema),
@@ -46,6 +66,7 @@ export const StatusQuerySchema = z
       .min(1, "Search cannot be blank")
       .max(100, "Search must be 100 characters or fewer")
       .optional(),
+
     //corce.number() converts the value to a number if possible, otherwise it will throw an error and it fromone type to the other
     //page = which page u want to get, pageSize = how many items per page
     page: z.coerce.number().int().min(1).default(1),
@@ -60,8 +81,8 @@ export const TODO_STATUSES = {
   active: "active",
   completed: "completed",
 } as const satisfies Record<Status, Status>;
-//Universally Unique Identifier
 
+//Universally Unique Identifier
 export const TodoIdParamSchema = z.object({ id: z.string().uuid() });
 export type TodoIdParam = z.infer<typeof TodoIdParamSchema>;
 

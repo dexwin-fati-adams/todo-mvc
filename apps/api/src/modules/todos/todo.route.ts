@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   CreateTodoRequestSchema,
+  ReplaceTodoRequestSchema,
   StatusQuerySchema,
   TodoIdParamSchema,
   TodoListResponseSchema,
@@ -22,9 +23,9 @@ function toMatchable<T, E>(result: Result<T, E>) {
     (value) => ({ ok: true as const, value }),
     (error) => ({ ok: false as const, error }),
   );
-}
-// I will explain it in my own terms when the user input is wrong , Zod shows the error and turn it into a Simple message for the Api and what is returning is a string of Zod errrors make it
+} // I will explain it in my own terms when the user input is wrong , Zod shows the error...
 // readable for the api simple put
+
 function formatZodIssues(issues: { path: (string | number)[]; message: string }[]): string {
   return issues
     .map((i) => (i.path.length > 0 ? `${i.path.join(".")}: ${i.message}` : i.message))
@@ -41,9 +42,7 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
     }
-    //This code is using ts-pattern to handle all possible results.
-    //The result can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
-    // makes sure we handle all possible cases.
+
     const result = await todoService.createTodo(body.data.title);
     return match(toMatchable(result))
       .with({ ok: true }, ({ value }) =>
@@ -81,7 +80,7 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
-    //These are the inputs/parameters you're giving to listTodos
+
     const result = await todoService.listTodos(
       query.data.status,
       query.data.search,
@@ -124,6 +123,44 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
           reply,
           request,
           context: "todos/get/200",
+        }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
+      })
+      .exhaustive();
+  });
+
+  // PUT /todos/:id — full replace. Both fields required (ReplaceTodoRequestSchema
+  // has no .optional() and is .strict()), so a partial body or extra keys
+  // (including id/createdAt) are rejected at validation, before the service
+  // ever runs.
+  fastify.put("/todos/:id", {}, async (request, reply) => {
+    const params = TodoIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
+    }
+
+    const body = ReplaceTodoRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
+    }
+
+    const result = await todoService.replaceTodo(params.data.id, body.data);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        sendValidated({
+          schema: TodoSchema,
+          body: value,
+          status: 200,
+          reply,
+          request,
+          context: "todos/replace/200",
         }),
       )
       .with({ ok: false }, ({ error }) => {

@@ -7,9 +7,6 @@ import { TodoErrors, type TodoError } from "./todo.errors.js";
 import type { Todo, TodoListResponse, Status } from "contracts";
 import type { TodoDbRow } from "@/lib/schema.js";
 
-//Take the Todo data from the database and convert it into the Todo format we use in the API.
-// The createdAt Date is converted into a string
-
 function rowToTodo(row: TodoDbRow): Todo {
   return {
     id: row.id,
@@ -19,10 +16,16 @@ function rowToTodo(row: TodoDbRow): Todo {
   };
 }
 
+//UpdatePatch is the data that the client sends in a PATCH request. It can have either title or completed, or both, but at least one must be present. The title can be an empty string, which is invalid, and will be caught by resolvePatch.
 type UpdatePatch = { title?: string; completed?: boolean };
+//ReplacePayload = PUT must receive the complete editable Todo data.
+type ReplacePayload = { title: string; completed: boolean };
+//ResolvedPatch means: the Todo fields that we are actually going to update.
 type ResolvedPatch = Partial<Pick<TodoDbRow, "title" | "completed">>;
+//PatchState tells us what happened after checking the PATCH request.
 type PatchState = { type: "EMPTY_TITLE" } | { type: "VALID"; resolved: ResolvedPatch };
 
+//resolvePatchState is basically checking the PATCH data and deciding what to do with it.
 function resolvePatch(patch: UpdatePatch): Result<ResolvedPatch, TodoError> {
   const state: PatchState = match(patch)
     .when(
@@ -43,6 +46,27 @@ function resolvePatch(patch: UpdatePatch): Result<ResolvedPatch, TodoError> {
     .exhaustive();
 }
 
+//ReplaceState tells us whether the PUT data is valid or has an empty title.
+type ReplaceState =
+  { type: "EMPTY_TITLE" } | { type: "VALID"; resolved: Pick<TodoDbRow, "title" | "completed"> };
+
+//Check the PUT data, clean the title, and either return an error or return the cleaned data.
+function resolveReplace(
+  payload: ReplacePayload,
+): Result<Pick<TodoDbRow, "title" | "completed">, TodoError> {
+  const trimmedTitle = payload.title.trim();
+
+  const state: ReplaceState =
+    trimmedTitle === ""
+      ? { type: "EMPTY_TITLE" }
+      : { type: "VALID", resolved: { title: trimmedTitle, completed: payload.completed } };
+
+  return match(state)
+    .with({ type: "EMPTY_TITLE" }, () => err(TodoErrors.emptyTitle()))
+    .with({ type: "VALID" }, ({ resolved }) => ok(resolved))
+    .exhaustive();
+}
+
 type ToggleAllState = { type: "EMPTY" } | { type: "ALL_COMPLETED" } | { type: "HAS_INCOMPLETE" };
 
 export interface TodoService {
@@ -55,10 +79,16 @@ export interface TodoService {
     pageSize: number,
   ): ResultAsync<TodoListResponse, TodoError>;
   updateTodo(id: string, patch: UpdatePatch): ResultAsync<Todo, TodoError>;
+  replaceTodo(id: string, payload: ReplacePayload): ResultAsync<Todo, TodoError>;
   deleteTodo(id: string): ResultAsync<void, TodoError>;
   toggleAll(): ResultAsync<void, TodoError>;
   clearCompleted(): ResultAsync<void, TodoError>;
 }
+
+//This code is using ts-pattern to handle all possible results.
+//The resul
+// t can be either ok: true or ok: false. If it succeeds, return the created todo with status 201. If it fails, return the HTTP error status and error body. exhaustive()
+// makes sure we handle all possible cases.
 
 export function createTodoService(repo: TodoRepository): TodoService {
   return {
@@ -76,19 +106,13 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.findById(id).map(rowToTodo);
     },
 
+    //These are the inputs/parameters you're giving to listTodos
     listTodos(
       status: Status,
       search: string | undefined,
       page: number,
       pageSize: number,
     ): ResultAsync<TodoListResponse, TodoError> {
-      // "all" with no page limits is used only to work out activeCount and
-      // completedCount across every todo, ignoring the current status filter,
-      // search, and page. The real page of results comes from the second,
-      // filtered call.
-
-      //  Number.MAX_SAFE_INTEGER It's simply a very large safe JavaScript number being used as the page size to effectively
-      // get all the todos.
       return repo.findAll("all", undefined, 1, Number.MAX_SAFE_INTEGER).andThen((allResult) =>
         repo.findAll(status, search, page, pageSize).map((filteredResult) => {
           const totalPages =
@@ -114,6 +138,19 @@ export function createTodoService(repo: TodoRepository): TodoService {
       }
 
       return repo.update(id, patchResult.value).map(rowToTodo);
+    },
+
+    replaceTodo(id: string, payload: ReplacePayload): ResultAsync<Todo, TodoError> {
+      const replaceResult = resolveReplace(payload);
+      if (replaceResult.isErr()) {
+        return errAsync(replaceResult.error);
+      }
+
+      // repo.update runs `UPDATE ... WHERE id = x` — a missing id returns
+      // zero rows, which the repository already turns into TODO_NOT_FOUND.
+      // It can never create a row, so "missing todo is not created" holds
+      // without any extra guard here.
+      return repo.update(id, replaceResult.value).map(rowToTodo);
     },
 
     deleteTodo(id: string): ResultAsync<void, TodoError> {
