@@ -27,7 +27,7 @@ export interface TodoRepository {
     id: string,
     patch: Partial<Pick<TodoDbRow, "title" | "completed">>,
   ): ResultAsync<TodoDbRow, TodoUpdateError>;
-  delete(id: string): ResultAsync<void, TodoDbError>;
+  delete(id: string): ResultAsync<void, TodoUpdateError>;
   updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError>;
   deleteAllCompleted(): ResultAsync<void, TodoDbError>;
 }
@@ -113,14 +113,16 @@ export function createTodoRepository(db: Db): TodoRepository {
         });
       },
 
-      delete(id: string): ResultAsync<void, TodoDbError> {
+      delete(id: string): ResultAsync<void, TodoUpdateError> {
         return ResultAsync.fromPromise(
-          tx
-            .delete(todosTable)
-            .where(eq(todosTable.id, id))
-            .then(() => undefined),
-          (cause) => TodoErrors.dbError(cause),
-        );
+          tx.delete(todosTable).where(eq(todosTable.id, id)).returning(),
+          (cause): TodoDbError => TodoErrors.dbError(cause),
+        ).andThen((rows) => {
+          if (rows.length === 0) {
+            return err(TodoErrors.notFound(id));
+          }
+          return ok(undefined);
+        });
       },
 
       updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError> {

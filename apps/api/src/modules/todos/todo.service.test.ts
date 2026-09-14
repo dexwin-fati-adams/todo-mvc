@@ -458,6 +458,19 @@ describe("deleteTodo", () => {
     expect(vi.mocked(repo.delete)).toHaveBeenCalledWith("todo-1");
   });
 
+  it("propagates repository NOT_FOUND error", async () => {
+    const notFoundError = TodoErrors.notFound("ghost-id");
+    vi.mocked(repo.delete).mockReturnValue(errAsync(notFoundError));
+
+    const service = createTodoService(repo);
+    const result = await service.deleteTodo("ghost-id");
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_NOT_FOUND");
+    }
+  });
+
   it("propagates repository errors", async () => {
     const dbError = TodoErrors.dbError(new Error("DB error"));
     vi.mocked(repo.delete).mockReturnValue(errAsync(dbError));
