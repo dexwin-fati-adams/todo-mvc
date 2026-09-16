@@ -34,6 +34,8 @@ export default defineConfig({
     url: "http://localhost:3001/todos",
     reuseExistingServer: false,
     timeout: 30_000,
+    stdout: "pipe",
+    stderr: "pipe",
     env: {
       DATABASE_URL: "postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db",
       PORT: "3001",
