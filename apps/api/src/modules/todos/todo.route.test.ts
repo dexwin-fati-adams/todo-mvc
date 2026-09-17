@@ -71,9 +71,7 @@ describe("POST /todos/toggle-all", () => {
 
   it("returns 503 on db error", async () => {
     const { fastify } = await buildApp({
-      toggleAll: vi.fn(() =>
-        Promise.resolve(err(TodoErrors.dbError(new Error("db down")))),
-      ),
+      toggleAll: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
 
     const res = await fastify.inject({
