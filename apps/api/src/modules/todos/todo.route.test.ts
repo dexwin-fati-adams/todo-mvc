@@ -53,6 +53,39 @@ async function buildApp(serviceOverrides = {}) {
   return { fastify, service };
 }
 
+// ─── POST /todos/toggle-all ───────────────────────────────────────────────────
+
+describe("POST /todos/toggle-all", () => {
+  it("returns 204 when all todos are toggled", async () => {
+    const { fastify, service } = await buildApp();
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/todos/toggle-all",
+    });
+
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe("");
+    expect(service.toggleAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 503 on db error", async () => {
+    const { fastify } = await buildApp({
+      toggleAll: vi.fn(() =>
+        Promise.resolve(err(TodoErrors.dbError(new Error("db down")))),
+      ),
+    });
+
+    const res = await fastify.inject({
+      method: "POST",
+      url: "/todos/toggle-all",
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
+  });
+});
+
 // ─── GET /todos ───────────────────────────────────────────────────────────────
 
 describe("GET /todos", () => {

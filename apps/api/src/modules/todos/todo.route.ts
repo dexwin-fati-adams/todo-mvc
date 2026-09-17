@@ -2,12 +2,16 @@ import type { FastifyInstance } from "fastify";
 import {
   CreateTodoRequestSchema,
   ReplaceTodoRequestSchema,
+
   SetAllCompletedRequestSchema,
+
   SetAllCompletedResponseSchema,
+
   StatusQuerySchema,
   TodoIdParamSchema,
   TodoListResponseSchema,
   TodoSchema,
+  UpdateTodoRequestSchema,
 } from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
@@ -171,24 +175,31 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       .exhaustive();
   });
 
-  fastify.patch("/todos", {}, async (request, reply) => {
-    const body = SetAllCompletedRequestSchema.safeParse(request.body);
+    fastify.patch("/todos/:id", {}, async (request, reply) => {
+    const params = TodoIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
+    }
+
+    const body = UpdateTodoRequestSchema.safeParse(request.body);
     if (!body.success) {
       return reply
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
     }
 
-    const result = await todoService.setAllCompleted(body.data.completed);
+    const result = await todoService.updateTodo(params.data.id, body.data);
     return match(toMatchable(result))
       .with({ ok: true }, ({ value }) =>
         sendValidated({
-          schema: SetAllCompletedResponseSchema,
-          body: { updatedCount: value },
+          schema: TodoSchema,
+          body: value,
           status: 200,
           reply,
           request,
-          context: "todos/set-all-completed/200",
+          context: "todos/update/200",
         }),
       )
       .with({ ok: false }, ({ error }) => {
@@ -197,4 +208,30 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       })
       .exhaustive();
   });
+   fastify.patch("/todos", {}, async (request, reply) => {
+  const body = SetAllCompletedRequestSchema.safeParse(request.body);
+  if (!body.success) {
+    return reply
+      .status(400)
+      .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
+  }
+
+  const result = await todoService.setAllCompleted(body.data.completed);
+  return match(toMatchable(result))
+    .with({ ok: true }, ({ value }) =>
+      sendValidated({
+        schema: SetAllCompletedResponseSchema,
+        body: { updatedCount: value },
+        status: 200,
+        reply,
+        request,
+        context: "todos/set-all-completed/200",
+      }),
+    )
+    .with({ ok: false }, ({ error }) => {
+      const { status, body: errorBody } = toHttpError(error);
+      return reply.status(status).send(errorBody);
+    })
+    .exhaustive();
+});
 }
