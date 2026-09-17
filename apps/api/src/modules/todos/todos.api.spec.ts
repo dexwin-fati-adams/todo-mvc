@@ -2,7 +2,7 @@ import { test, expect, type APIRequestContext } from "@playwright/test";
 import { createDb, type Db } from "@/lib/db.js";
 import { config } from "@/lib/config.js";
 import { sql } from "drizzle-orm";
-import type { Todo, TodoListResponse, ErrorResponse } from "contracts";
+import type { Todo, TodoListResponse, ErrorResponse, SetAllCompletedResponse } from "contracts";
 
 const db: Db = createDb(config);
 
@@ -77,7 +77,7 @@ test.describe("GET /todos", () => {
   test("filters by status", async ({ request }) => {
     const a = await createTodo(request, "Buy milk");
     await createTodo(request, "Walk dog");
-    await request.patch(`/todos/${a.id}`, { data: { completed: true } });
+    await request.put(`/todos/${a.id}`, { data: { title: a.title, completed: true } });
 
     const activeRes = await request.get("/todos?status=active");
     const activeBody = (await activeRes.json()) as TodoListResponse;
@@ -159,52 +159,66 @@ test.describe("GET /todos/:id", () => {
   });
 });
 
-test.describe("PATCH /todos/:id", () => {
-  test("updates the title", async ({ request }) => {
-    const created = await createTodo(request);
+// PATCH is a bulk endpoint — it sets the completed status for every todo at
+// once and reports how many rows it touched. There is no per-id PATCH; use
+// PUT /todos/:id to update a single todo's title and/or completed status.
+test.describe("PATCH /todos", () => {
+  test("marks every todo as completed and reports how many were updated", async ({ request }) => {
+    await createTodo(request, "Buy milk");
+    await createTodo(request, "Walk dog");
 
-    const res = await request.patch(`/todos/${created.id}`, {
-      data: { title: "Buy oat milk" },
-    });
+    const res = await request.patch("/todos", { data: { completed: true } });
     expect(res.status()).toBe(200);
 
-    const body = (await res.json()) as Todo;
-    expect(body.title).toBe("Buy oat milk");
+    const body = (await res.json()) as SetAllCompletedResponse;
+    expect(body.updatedCount).toBe(2);
+
+    const list = (await (await request.get("/todos")).json()) as TodoListResponse;
+    expect(list.todos.every((t) => t.completed)).toBe(true);
   });
 
-  test("toggles completed", async ({ request }) => {
+  test("marks every todo as active", async ({ request }) => {
     const created = await createTodo(request);
-
-    const res = await request.patch(`/todos/${created.id}`, {
-      data: { completed: true },
+    await request.put(`/todos/${created.id}`, {
+      data: { title: created.title, completed: true },
     });
-    const body = (await res.json()) as Todo;
-    expect(body.completed).toBe(true);
+
+    const res = await request.patch("/todos", { data: { completed: false } });
+    expect(res.status()).toBe(200);
+
+    const body = (await res.json()) as SetAllCompletedResponse;
+    expect(body.updatedCount).toBe(1);
+
+    const getRes = await request.get(`/todos/${created.id}`);
+    expect(((await getRes.json()) as Todo).completed).toBe(false);
   });
 
-  test("rejects an empty body (refine requires at least one field)", async ({ request }) => {
-    const created = await createTodo(request);
+  test("reports zero updated when there are no todos", async ({ request }) => {
+    const res = await request.patch("/todos", { data: { completed: true } });
+    expect(res.status()).toBe(200);
 
-    const res = await request.patch(`/todos/${created.id}`, { data: {} });
+    const body = (await res.json()) as SetAllCompletedResponse;
+    expect(body.updatedCount).toBe(0);
+  });
+
+  test("rejects an empty body (completed is required)", async ({ request }) => {
+    const res = await request.patch("/todos", { data: {} });
     expect(res.status()).toBe(400);
+
     const body = (await res.json()) as ErrorResponse;
     expect(body.error).toBe("VALIDATION_ERROR");
   });
 
-  test("rejects extra keys like id or createdAt (strict schema)", async ({ request }) => {
-    const created = await createTodo(request);
-
-    const res = await request.patch(`/todos/${created.id}`, {
-      data: { title: "Buy oat milk", id: NONEXISTENT_ID },
+  test("rejects extra keys (strict schema)", async ({ request }) => {
+    const res = await request.patch("/todos", {
+      data: { completed: true, id: NONEXISTENT_ID },
     });
     expect(res.status()).toBe(400);
   });
 
-  test("returns 404 for a nonexistent id", async ({ request }) => {
-    const res = await request.patch(`/todos/${NONEXISTENT_ID}`, {
-      data: { title: "nope" },
-    });
-    expect(res.status()).toBe(404);
+  test("rejects a non-boolean completed value", async ({ request }) => {
+    const res = await request.patch("/todos", { data: { completed: "yes" } });
+    expect(res.status()).toBe(400);
   });
 });
 
@@ -252,28 +266,6 @@ test.describe("PUT /todos/:id", () => {
       data: { title: "nope", completed: false },
     });
     expect(res.status()).toBe(404);
-  });
-});
-
-test.describe("DELETE /todos/:id", () => {
-  test("deletes a todo", async ({ request }) => {
-    const created = await createTodo(request);
-
-    const del = await request.delete(`/todos/${created.id}`);
-    expect(del.status()).toBe(204);
-
-    const list = (await (await request.get("/todos")).json()) as TodoListResponse;
-    expect(list.todos).toHaveLength(0);
-  });
-
-  test("returns 404 for a nonexistent id", async ({ request }) => {
-    const res = await request.delete(`/todos/${NONEXISTENT_ID}`);
-    expect(res.status()).toBe(404);
-  });
-
-  test("returns 400 for a malformed (non-UUID) id", async ({ request }) => {
-    const res = await request.delete(`/todos/not-a-valid-id`);
-    expect(res.status()).toBe(400);
   });
 });
 

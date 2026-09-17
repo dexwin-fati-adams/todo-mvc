@@ -42,6 +42,7 @@ function makeService(overrides = {}) {
     deleteTodo: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
     toggleAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
     clearCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
+    setAllCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(0))),
     ...overrides,
   };
 }
@@ -166,7 +167,7 @@ describe("GET /todos/:id", () => {
     });
     const res = await fastify.inject({ method: "GET", url: `/todos/${validId}` });
 
-    expect(res.statusCode).toBe(503);
+    expect(res.statusCode).toBe(503);   
   });
 });
 
@@ -530,6 +531,81 @@ describe("PATCH /todos/:id", () => {
       method: "PATCH",
       url: `/todos/${validId}`,
       payload: { title: "Buy eggs" },
+    });
+
+    expect(res.statusCode).toBe(503);
+  });
+});
+
+// ─── PATCH /todos ─────────────────────────────────────────────────────────────
+
+describe("PATCH /todos", () => {
+  it("returns 200 with the updated count when marking all completed", async () => {
+    const { fastify, service } = await buildApp({
+      setAllCompleted: vi.fn(() => Promise.resolve(ok(3))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: "/todos",
+      payload: { completed: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ updatedCount: 3 });
+    expect(service.setAllCompleted).toHaveBeenCalledWith(true);
+  });
+
+  it("returns 200 with the updated count when marking all incomplete", async () => {
+    const { fastify, service } = await buildApp({
+      setAllCompleted: vi.fn(() => Promise.resolve(ok(5))),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: "/todos",
+      payload: { completed: false },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ updatedCount: 5 });
+    expect(service.setAllCompleted).toHaveBeenCalledWith(false);
+  });
+
+  it("returns 400 when completed is missing", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: "/todos",
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.setAllCompleted).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when completed is not a boolean", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: "/todos",
+      payload: { completed: "yes" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.setAllCompleted).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 on db error", async () => {
+    const { fastify } = await buildApp({
+      setAllCompleted: vi.fn(() =>
+        Promise.resolve(err(TodoErrors.dbError(new Error("db down")))),
+      ),
+    });
+    const res = await fastify.inject({
+      method: "PATCH",
+      url: "/todos",
+      payload: { completed: true },
     });
 
     expect(res.statusCode).toBe(503);

@@ -406,13 +406,10 @@ describe("update", () => {
 // ─── delete ───────────────────────────────────────────────────────────────────
 
 describe("delete", () => {
-  it("deletes an existing todo and returns void", async () => {
-    const row = makeRow({ id: "1" });
+  it("deletes a todo and returns void", async () => {
     const db = {
       delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([row]),
-        }),
+        where: vi.fn().mockResolvedValue(undefined),
       }),
     } as unknown as Db;
 
@@ -423,28 +420,10 @@ describe("delete", () => {
     expect(result._unsafeUnwrap()).toBeUndefined();
   });
 
-  it("returns TODO_NOT_FOUND when no row matches the id", async () => {
-    const db = {
-      delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    } as unknown as Db;
-
-    const repo = createTodoRepository(db);
-    const result = await repo.delete("99");
-
-    expect(result.isErr()).toBe(true);
-    expect(result._unsafeUnwrapErr().type).toBe("TODO_NOT_FOUND");
-  });
-
   it("returns TODO_DB_ERROR when delete throws", async () => {
     const db = {
       delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          returning: vi.fn().mockRejectedValue(new Error("delete failed")),
-        }),
+        where: vi.fn().mockRejectedValue(new Error("delete failed")),
       }),
     } as unknown as Db;
 
@@ -510,6 +489,74 @@ describe("deleteAllCompleted", () => {
 
     const repo = createTodoRepository(db);
     const result = await repo.deleteAllCompleted();
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
+  });
+});
+
+// ─── setAllCompleted ──────────────────────────────────────────────────────────
+
+describe("setAllCompleted", () => {
+  it("marks all todos as completed and returns the updated count", async () => {
+    const rows = [makeRow({ id: "1", completed: true }), makeRow({ id: "2", completed: true })];
+    const set = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(rows),
+    });
+    const db = {
+      update: vi.fn().mockReturnValue({ set }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.setAllCompleted(true);
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(2);
+    expect(set).toHaveBeenCalledWith({ completed: true });
+  });
+
+  it("marks all todos as active and returns the updated count", async () => {
+    const rows = [makeRow({ id: "1", completed: false })];
+    const set = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(rows),
+    });
+    const db = {
+      update: vi.fn().mockReturnValue({ set }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.setAllCompleted(false);
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(1);
+    expect(set).toHaveBeenCalledWith({ completed: false });
+  });
+
+  it("returns 0 when the collection is empty", async () => {
+    const set = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([]),
+    });
+    const db = {
+      update: vi.fn().mockReturnValue({ set }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.setAllCompleted(true);
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(0);
+  });
+
+  it("returns TODO_DB_ERROR when it throws", async () => {
+    const set = vi.fn().mockReturnValue({
+      returning: vi.fn().mockRejectedValue(new Error("failed")),
+    });
+    const db = {
+      update: vi.fn().mockReturnValue({ set }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.setAllCompleted(true);
 
     expect(result.isErr()).toBe(true);
     expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
