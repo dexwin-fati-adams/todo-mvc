@@ -6,7 +6,7 @@ import type { Db } from "@/lib/db.js";
 import { todosTable, type TodoDbRow } from "@/lib/schema.js";
 import { TodoError, TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
 
-type TodoUpdateError =Extract<TodoError, TodoDbError | TodoNotFoundError>;
+type TodoUpdateError = Extract<TodoError, TodoDbError | TodoNotFoundError>;
 
 export interface FindAllResult {
   items: TodoDbRow[];
