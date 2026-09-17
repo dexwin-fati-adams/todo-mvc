@@ -1,0 +1,57 @@
+name: Playwright Tests
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: todo_test_user
+          POSTGRES_PASSWORD: todo_test_password
+          POSTGRES_DB: todo_test_db
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
+      PORT: "3001"
+      HOST: "127.0.0.1"
+      CORS_ORIGIN: "http://localhost:3000"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply database schema
+        run: pnpm --filter api drizzle-kit push --force
+
+      - name: Install Playwright Browsers
+        run: pnpm exec playwright install --with-deps
+
+      - run: pnpm exec playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30

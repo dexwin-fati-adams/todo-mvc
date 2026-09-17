@@ -555,6 +555,72 @@ describe("PATCH /todos/:id — update todo (real app, real database)", () => {
   });
 });
 
+describe("DELETE /todos/:id — delete todo (real app, real database)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("../../app.js");
+    app = await buildApp();
+    await app.ready();
+    await clearAllTodos();
+  });
+
+  afterEach(async () => {
+    await clearAllTodos();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it("deletes an existing todo and confirms it is gone", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const res = await app.inject({ method: "DELETE", url: `/todos/${id}` });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe("");
+
+    const getRes = await app.inject({ method: "GET", url: `/todos/${id}` });
+    expect(getRes.statusCode).toBe(404);
+  });
+
+  it("returns 404 for a well-formed but nonexistent id", async () => {
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/todos/00000000-0000-0000-0000-000000000099",
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("NOT_FOUND");
+  });
+
+  it("returns 400 for an invalid uuid", async () => {
+    const res = await app.inject({ method: "DELETE", url: "/todos/not-a-uuid" });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+  });
+
+  it("returns 404 on a repeated delete of the same id", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
+    const { id } = created.json();
+
+    const firstDelete = await app.inject({ method: "DELETE", url: `/todos/${id}` });
+    expect(firstDelete.statusCode).toBe(204);
+
+    const secondDelete = await app.inject({ method: "DELETE", url: `/todos/${id}` });
+    expect(secondDelete.statusCode).toBe(404);
+    expect(secondDelete.json().error).toBe("NOT_FOUND");
+  });
+});
+
 afterAll(async () => {
   await db.$client.end();
 });
