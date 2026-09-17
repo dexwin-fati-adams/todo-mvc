@@ -167,7 +167,7 @@ describe("GET /todos/:id", () => {
     });
     const res = await fastify.inject({ method: "GET", url: `/todos/${validId}` });
 
-    expect(res.statusCode).toBe(503);   
+    expect(res.statusCode).toBe(503);
   });
 });
 
@@ -598,9 +598,7 @@ describe("PATCH /todos", () => {
 
   it("returns 503 on db error", async () => {
     const { fastify } = await buildApp({
-      setAllCompleted: vi.fn(() =>
-        Promise.resolve(err(TodoErrors.dbError(new Error("db down")))),
-      ),
+      setAllCompleted: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
     const res = await fastify.inject({
       method: "PATCH",

@@ -8,7 +8,6 @@ import {
   TodoIdParamSchema,
   TodoListResponseSchema,
   TodoSchema,
- 
 } from "contracts";
 import { match } from "ts-pattern";
 import type { TodoService } from "./todo.service.js";
@@ -172,30 +171,30 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       .exhaustive();
   });
 
- fastify.patch("/todos", {}, async (request, reply) => {
-  const body = SetAllCompletedRequestSchema.safeParse(request.body);
-  if (!body.success) {
-    return reply
-      .status(400)
-      .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
-  }
+  fastify.patch("/todos", {}, async (request, reply) => {
+    const body = SetAllCompletedRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
+    }
 
-  const result = await todoService.setAllCompleted(body.data.completed);
-  return match(toMatchable(result))
-    .with({ ok: true }, ({ value }) =>
-      sendValidated({
-        schema: SetAllCompletedResponseSchema,
-        body: { updatedCount: value },
-        status: 200,
-        reply,
-        request,
-        context: "todos/set-all-completed/200",
-      }),
-    )
-    .with({ ok: false }, ({ error }) => {
-      const { status, body: errorBody } = toHttpError(error);
-      return reply.status(status).send(errorBody);
-    })
-    .exhaustive();
-});
+    const result = await todoService.setAllCompleted(body.data.completed);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        sendValidated({
+          schema: SetAllCompletedResponseSchema,
+          body: { updatedCount: value },
+          status: 200,
+          reply,
+          request,
+          context: "todos/set-all-completed/200",
+        }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
+      })
+      .exhaustive();
+  });
 }
