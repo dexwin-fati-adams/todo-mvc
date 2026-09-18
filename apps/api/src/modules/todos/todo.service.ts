@@ -83,6 +83,7 @@ export interface TodoService {
   deleteTodo(id: string): ResultAsync<void, TodoError>;
   toggleAll(): ResultAsync<void, TodoError>;
   clearCompleted(): ResultAsync<void, TodoError>;
+  setAllCompleted(completed: boolean): ResultAsync<number, TodoError>;
 }
 
 //This code is using ts-pattern to handle all possible results.
@@ -184,6 +185,10 @@ export function createTodoService(repo: TodoRepository): TodoService {
 
     clearCompleted(): ResultAsync<void, TodoError> {
       return repo.deleteAllCompleted();
+    },
+
+    setAllCompleted(completed: boolean): ResultAsync<number, TodoError> {
+      return repo.setAllCompleted(completed);
     },
   };
 }
