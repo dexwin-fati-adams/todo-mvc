@@ -155,6 +155,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.update(id, replaceResult.value).map(rowToTodo);
     },
 
+    //deleteTodo(id) → delete one specific todo using its ID
     deleteTodo(id: string): ResultAsync<void, TodoError> {
       return repo.delete(id);
     },
@@ -184,6 +185,8 @@ export function createTodoService(repo: TodoRepository): TodoService {
       });
     },
 
+
+    //clearCompleted() → delete all completed todos, but return no count
     clearCompleted(): ResultAsync<void, TodoError> {
       return repo.deleteAllCompleted();
     },
@@ -196,6 +199,8 @@ export function createTodoService(repo: TodoRepository): TodoService {
     // DELETE ... RETURNING; the count it resolves to is exactly the number
     // of completed todos removed, independent of any page/search state,
     // and 0 is a valid (not an error) result for an already-clean list.
+
+    //The number means the number of completed todos deleted, not the todo's ID.
     deleteCompleted(): ResultAsync<number, TodoError> {
       return repo.deleteCompleted();
     },
