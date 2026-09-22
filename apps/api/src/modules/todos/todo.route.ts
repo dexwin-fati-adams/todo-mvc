@@ -231,4 +231,23 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       })
       .exhaustive();
   });
+
+  fastify.delete("/todos/:id", {}, async (request, reply) => {
+    const params = TodoIdParamSchema.safeParse(request.params);
+    if (!params.success) {
+      //validation and returning all the issues
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(params.error.issues) });
+    }
+
+    const result = await todoService.deleteTodo(params.data.id);
+    return match(toMatchable(result))
+      .with({ ok: true }, () => reply.status(204).send())
+      .with({ ok: false }, ({ error }) => {
+        const { status, body } = toHttpError(error);
+        return reply.status(status).send(body);
+      })
+      .exhaustive();
+  });
 }
