@@ -84,6 +84,7 @@ export interface TodoService {
   toggleAll(): ResultAsync<void, TodoError>;
   clearCompleted(): ResultAsync<void, TodoError>;
   setAllCompleted(completed: boolean): ResultAsync<number, TodoError>;
+  deleteCompleted(): ResultAsync<number, TodoError>;
 }
 
 //This code is using ts-pattern to handle all possible results.
@@ -189,6 +190,14 @@ export function createTodoService(repo: TodoRepository): TodoService {
 
     setAllCompleted(completed: boolean): ResultAsync<number, TodoError> {
       return repo.setAllCompleted(completed);
+    },
+
+    // Delegates straight to the repository's single atomic
+    // DELETE ... RETURNING; the count it resolves to is exactly the number
+    // of completed todos removed, independent of any page/search state,
+    // and 0 is a valid (not an error) result for an already-clean list.
+    deleteCompleted(): ResultAsync<number, TodoError> {
+      return repo.deleteCompleted();
     },
   };
 }

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import {
   CreateTodoRequestSchema,
+  DeleteCompletedQuerySchema,
+  DeleteCompletedResponseSchema,
   ReplaceTodoRequestSchema,
   SetAllCompletedRequestSchema,
   SetAllCompletedResponseSchema,
@@ -82,7 +84,7 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
-// these qre inputs for the listTodos function in the service layer. The service layer will handle the business logic and return the appropriate response based on the inputs provided.
+
     const result = await todoService.listTodos(
       query.data.status,
       query.data.search,
@@ -103,6 +105,45 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
       .with({ ok: false }, ({ error }) => {
         const { status, body } = toHttpError(error);
         return reply.status(status).send(body);
+      })
+      .exhaustive();
+  });
+
+  // DELETE /todos?status=completed — atomic bulk delete of every completed
+  // todo across the full collection, independent of any page/search state.
+  // status=completed is the only accepted query: missing, a different
+  // value, a duplicated status param (fastify parses that as an array,
+  // which fails the literal check below), or any unknown query key are all
+  // rejected here as VALIDATION_ERROR before the service runs. Plain
+  // DELETE /todos with no query at all is rejected the same way, since the
+  // schema requires status to be present and exactly "completed" — there
+  // is no unscoped collection-delete.
+  fastify.delete("/todos", {}, async (request, reply) => {
+    const query = DeleteCompletedQuerySchema.safeParse(request.query);
+    if (!query.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
+    }
+
+    // deleteCompleted() is expected to run as a single atomic operation and
+    // return the number of todos removed; 0 (nothing was completed) is a
+    // valid, successful result, not an error.
+    const result = await todoService.deleteCompleted();
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        sendValidated({
+          schema: DeleteCompletedResponseSchema,
+          body: { deletedCount: value },
+          status: 200,
+          reply,
+          request,
+          context: "todos/delete-completed/200",
+        }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
       })
       .exhaustive();
   });

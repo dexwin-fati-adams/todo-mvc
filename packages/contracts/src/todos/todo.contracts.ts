@@ -109,6 +109,29 @@ export const SetAllCompletedResponseSchema = z.object({
 });
 export type SetAllCompletedResponse = z.infer<typeof SetAllCompletedResponseSchema>;
 
+// DELETE /todos?status=completed — the only accepted query for the
+// collection-delete route. status is REQUIRED and must be the literal
+// "completed": missing, "all"/"active", or any other value all fail this
+// check. A duplicated ?status=completed&status=completed is parsed as an
+// array by the query-string parser, which also fails z.literal("completed").
+// .strict() rejects any other query key (page, search, pageSize, etc.), so
+// there is no unscoped "delete everything" or partial-scope variant of this
+// route — only the full completed-subset delete is representable here.
+export const DeleteCompletedQuerySchema = z
+  .object({
+    status: z.literal("completed"),
+  })
+  .strict();
+export type DeleteCompletedQuery = z.infer<typeof DeleteCompletedQuerySchema>;
+
+// Response for DELETE /todos?status=completed — the number of todos
+// actually removed by the single DELETE ... RETURNING statement. 0 when
+// there were no completed todos to remove (not an error).
+export const DeleteCompletedResponseSchema = z.object({
+  deletedCount: z.number().int().min(0),
+});
+export type DeleteCompletedResponse = z.infer<typeof DeleteCompletedResponseSchema>;
+
 type TodoPath = "/" | "/active" | "/completed";
 
 export function getStatusFromPath(path: TodoPath): Status {
