@@ -185,7 +185,6 @@ export function createTodoService(repo: TodoRepository): TodoService {
       });
     },
 
-
     //clearCompleted() → delete all completed todos, but return no count
     clearCompleted(): ResultAsync<void, TodoError> {
       return repo.deleteAllCompleted();

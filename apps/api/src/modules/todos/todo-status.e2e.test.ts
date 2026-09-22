@@ -738,7 +738,11 @@ describe("DELETE /todos?status=completed — bulk delete completed todos (real a
   });
 
   it("deletes only completed todos and reports the deleted count", async () => {
-    const milk = await app.inject({ method: "POST", url: "/todos", payload: { title: "Buy milk" } });
+    const milk = await app.inject({
+      method: "POST",
+      url: "/todos",
+      payload: { title: "Buy milk" },
+    });
     const dog = await app.inject({ method: "POST", url: "/todos", payload: { title: "Walk dog" } });
     const { id: milkId } = milk.json();
     const { id: dogId } = dog.json();
