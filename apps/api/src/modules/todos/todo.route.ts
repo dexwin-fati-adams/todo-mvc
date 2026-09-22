@@ -82,7 +82,7 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
         .status(400)
         .send({ error: "VALIDATION_ERROR", message: formatZodIssues(query.error.issues) });
     }
-
+// these qre inputs for the listTodos function in the service layer. The service layer will handle the business logic and return the appropriate response based on the inputs provided.
     const result = await todoService.listTodos(
       query.data.status,
       query.data.search,
