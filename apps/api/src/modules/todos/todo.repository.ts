@@ -4,9 +4,9 @@ import { match } from "ts-pattern";
 import type { Status } from "contracts";
 import type { Db } from "@/lib/db.js";
 import { todosTable, type TodoDbRow } from "@/lib/schema.js";
-import { TodoError, TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
+import { TodoErrors, type TodoDbError, type TodoNotFoundError } from "./todo.errors.js";
 
-type TodoUpdateError = Extract<TodoError, TodoDbError | TodoNotFoundError>;
+type TodoUpdateError = TodoDbError | TodoNotFoundError;
 
 export interface FindAllResult {
   items: TodoDbRow[];
@@ -27,9 +27,10 @@ export interface TodoRepository {
     id: string,
     patch: Partial<Pick<TodoDbRow, "title" | "completed">>,
   ): ResultAsync<TodoDbRow, TodoUpdateError>;
-  delete(id: string): ResultAsync<void, TodoUpdateError>;
+  delete(id: string): ResultAsync<void, TodoDbError>;
   updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError>;
   deleteAllCompleted(): ResultAsync<void, TodoDbError>;
+  setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError>;
 }
 
 export function createTodoRepository(db: Db): TodoRepository {
@@ -113,16 +114,14 @@ export function createTodoRepository(db: Db): TodoRepository {
         });
       },
 
-      delete(id: string): ResultAsync<void, TodoUpdateError> {
+      delete(id: string): ResultAsync<void, TodoDbError> {
         return ResultAsync.fromPromise(
-          tx.delete(todosTable).where(eq(todosTable.id, id)).returning(),
-          (cause): TodoDbError => TodoErrors.dbError(cause),
-        ).andThen((rows) => {
-          if (rows.length === 0) {
-            return err(TodoErrors.notFound(id));
-          }
-          return ok(undefined);
-        });
+          tx
+            .delete(todosTable)
+            .where(eq(todosTable.id, id))
+            .then(() => undefined),
+          (cause) => TodoErrors.dbError(cause),
+        );
       },
 
       updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError> {
@@ -143,6 +142,16 @@ export function createTodoRepository(db: Db): TodoRepository {
             .then(() => undefined),
           (cause) => TodoErrors.dbError(cause),
         );
+      },
+
+      // Single UPDATE ... RETURNING: atomic on its own, no WHERE means every
+      // row is affected regardless of filter/page, and rows.length gives the
+      // exact count — 0 for an empty table.
+      setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError> {
+        return ResultAsync.fromPromise(
+          tx.update(todosTable).set({ completed }).returning(),
+          (cause) => TodoErrors.dbError(cause),
+        ).map((rows) => rows.length);
       },
     };
   }

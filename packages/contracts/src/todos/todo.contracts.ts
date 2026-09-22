@@ -92,6 +92,23 @@ export const ErrorResponseSchema = z.object({
 });
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 
+// PATCH /todos — sets completed for every todo in the collection, not just
+// the current page/filter. Accepts exactly one field: completed. .strict()
+// rejects anything else, including status/search/page if a client sends it.
+export const SetAllCompletedRequestSchema = z
+  .object({
+    completed: z.boolean(),
+  })
+  .strict();
+export type SetAllCompletedRequest = z.infer<typeof SetAllCompletedRequestSchema>;
+
+// Response for PATCH /todos — the number of todos actually updated by the
+// single UPDATE ... RETURNING statement. 0 for an empty collection.
+export const SetAllCompletedResponseSchema = z.object({
+  updatedCount: z.number().int().min(0),
+});
+export type SetAllCompletedResponse = z.infer<typeof SetAllCompletedResponseSchema>;
+
 type TodoPath = "/" | "/active" | "/completed";
 
 export function getStatusFromPath(path: TodoPath): Status {
