@@ -132,7 +132,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
         }),
       );
     },
-
+    //updateTodo() is basically the PATCH version of changing a todo.
     updateTodo(id: string, patch: UpdatePatch): ResultAsync<Todo, TodoError> {
       const patchResult = resolvePatch(patch);
       if (patchResult.isErr()) {
@@ -141,7 +141,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
 
       return repo.update(id, patchResult.value).map(rowToTodo);
     },
-
+    //In this code, replaceTodo() is used for a PUT request.
     replaceTodo(id: string, payload: ReplacePayload): ResultAsync<Todo, TodoError> {
       const replaceResult = resolveReplace(payload);
       if (replaceResult.isErr()) {
