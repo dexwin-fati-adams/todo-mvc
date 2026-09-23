@@ -84,6 +84,7 @@ export interface TodoService {
   toggleAll(): ResultAsync<void, TodoError>;
   clearCompleted(): ResultAsync<void, TodoError>;
   setAllCompleted(completed: boolean): ResultAsync<number, TodoError>;
+  deleteCompleted(): ResultAsync<number, TodoError>;
 }
 
 //This code is using ts-pattern to handle all possible results.
@@ -131,7 +132,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
         }),
       );
     },
-
+    //updateTodo() is basically the PATCH version of changing a todo.
     updateTodo(id: string, patch: UpdatePatch): ResultAsync<Todo, TodoError> {
       const patchResult = resolvePatch(patch);
       if (patchResult.isErr()) {
@@ -140,7 +141,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
 
       return repo.update(id, patchResult.value).map(rowToTodo);
     },
-
+    //In this code, replaceTodo() is used for a PUT request.
     replaceTodo(id: string, payload: ReplacePayload): ResultAsync<Todo, TodoError> {
       const replaceResult = resolveReplace(payload);
       if (replaceResult.isErr()) {
@@ -154,6 +155,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.update(id, replaceResult.value).map(rowToTodo);
     },
 
+    //deleteTodo(id) → delete one specific todo using its ID
     deleteTodo(id: string): ResultAsync<void, TodoError> {
       return repo.delete(id);
     },
@@ -183,12 +185,23 @@ export function createTodoService(repo: TodoRepository): TodoService {
       });
     },
 
+    //clearCompleted() → delete all completed todos, but return no count
     clearCompleted(): ResultAsync<void, TodoError> {
       return repo.deleteAllCompleted();
     },
 
     setAllCompleted(completed: boolean): ResultAsync<number, TodoError> {
       return repo.setAllCompleted(completed);
+    },
+
+    // Delegates straight to the repository's single atomic
+    // DELETE ... RETURNING; the count it resolves to is exactly the number
+    // of completed todos removed, independent of any page/search state,
+    // and 0 is a valid (not an error) result for an already-clean list.
+
+    //The number means the number of completed todos deleted, not the todo's ID.
+    deleteCompleted(): ResultAsync<number, TodoError> {
+      return repo.deleteCompleted();
     },
   };
 }

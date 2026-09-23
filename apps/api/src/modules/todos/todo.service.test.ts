@@ -28,6 +28,7 @@ function makeMockRepository(): TodoRepository {
     updateAllCompleted: vi.fn(),
     deleteAllCompleted: vi.fn(),
     setAllCompleted: vi.fn(),
+    deleteCompleted: vi.fn(),
   };
 }
 
@@ -602,6 +603,54 @@ describe("setAllCompleted", () => {
 
     const service = createTodoService(repo);
     const result = await service.setAllCompleted(true);
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_DB_ERROR");
+    }
+  });
+});
+
+// ─── deleteCompleted ──────────────────────────────────────────────────────────
+
+describe("deleteCompleted", () => {
+  let repo: TodoRepository;
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("deletes all completed todos and returns the deleted count", async () => {
+    vi.mocked(repo.deleteCompleted).mockReturnValue(okAsync(4));
+
+    const service = createTodoService(repo);
+    const result = await service.deleteCompleted();
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value).toBe(4);
+    }
+    expect(vi.mocked(repo.deleteCompleted)).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 0 when there are no completed todos", async () => {
+    vi.mocked(repo.deleteCompleted).mockReturnValue(okAsync(0));
+
+    const service = createTodoService(repo);
+    const result = await service.deleteCompleted();
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value).toBe(0);
+    }
+  });
+
+  it("propagates repository errors", async () => {
+    const dbError = TodoErrors.dbError(new Error("DB error"));
+    vi.mocked(repo.deleteCompleted).mockReturnValue(errAsync(dbError));
+
+    const service = createTodoService(repo);
+    const result = await service.deleteCompleted();
 
     expect(result.isErr()).toBe(true);
     if (result.isErr()) {

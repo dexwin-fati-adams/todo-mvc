@@ -43,6 +43,7 @@ function makeService(overrides = {}) {
     toggleAll: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
     clearCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(undefined))),
     setAllCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(0))),
+    deleteCompleted: vi.fn(() => ResultAsync.fromSafePromise(Promise.resolve(0))),
     ...overrides,
   };
 }
@@ -152,6 +153,87 @@ describe("GET /todos", () => {
       listTodos: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
     });
     const res = await fastify.inject({ method: "GET", url: "/todos" });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
+  });
+});
+
+// ─── DELETE /todos?status=completed ────────────────────────────────────────────
+
+describe("DELETE /todos?status=completed", () => {
+  it("returns 200 with the deleted count when there are completed todos", async () => {
+    const { fastify, service } = await buildApp({
+      deleteCompleted: vi.fn(() => Promise.resolve(ok(4))),
+    });
+
+    const res = await fastify.inject({ method: "DELETE", url: "/todos?status=completed" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ deletedCount: 4 });
+    expect(service.deleteCompleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 200 with deletedCount 0 when nothing is completed", async () => {
+    const { fastify, service } = await buildApp({
+      deleteCompleted: vi.fn(() => Promise.resolve(ok(0))),
+    });
+
+    const res = await fastify.inject({ method: "DELETE", url: "/todos?status=completed" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ deletedCount: 0 });
+    expect(service.deleteCompleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 400 when status is missing", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({ method: "DELETE", url: "/todos" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.deleteCompleted).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when status is a different value", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({ method: "DELETE", url: "/todos?status=active" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.deleteCompleted).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when status is duplicated", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "DELETE",
+      url: "/todos?status=completed&status=completed",
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.deleteCompleted).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when an unknown query parameter is present", async () => {
+    const { fastify, service } = await buildApp();
+    const res = await fastify.inject({
+      method: "DELETE",
+      url: "/todos?status=completed&page=2",
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(service.deleteCompleted).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 on db error", async () => {
+    const { fastify } = await buildApp({
+      deleteCompleted: vi.fn(() => Promise.resolve(err(TodoErrors.dbError(new Error("db down"))))),
+    });
+
+    const res = await fastify.inject({ method: "DELETE", url: "/todos?status=completed" });
 
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe("SERVICE_UNAVAILABLE");
