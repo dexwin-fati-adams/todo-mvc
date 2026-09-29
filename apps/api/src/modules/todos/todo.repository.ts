@@ -31,6 +31,7 @@ export interface TodoRepository {
   updateAllCompleted(completed: boolean): ResultAsync<void, TodoDbError>;
   deleteAllCompleted(): ResultAsync<void, TodoDbError>;
   setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError>;
+  deleteCompleted(): ResultAsync<number, TodoDbError>;
 }
 
 export function createTodoRepository(db: Db): TodoRepository {
@@ -150,6 +151,20 @@ export function createTodoRepository(db: Db): TodoRepository {
       setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError> {
         return ResultAsync.fromPromise(
           tx.update(todosTable).set({ completed }).returning(),
+          (cause) => TodoErrors.dbError(cause),
+        ).map((rows) => rows.length);
+      },
+
+      // Single DELETE ... WHERE completed = true RETURNING: atomic on its
+      // own (one statement, no read-then-write gap), scoped to the full
+      // table regardless of any page/search state the caller had, and
+      // rows.length gives the exact number removed — 0 when there were no
+      // completed todos, which is a valid, successful result. Active todos
+      // are untouched because the WHERE clause only ever matches
+      // completed = true rows.
+      deleteCompleted(): ResultAsync<number, TodoDbError> {
+        return ResultAsync.fromPromise(
+          tx.delete(todosTable).where(eq(todosTable.completed, true)).returning(),
           (cause) => TodoErrors.dbError(cause),
         ).map((rows) => rows.length);
       },

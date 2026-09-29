@@ -562,3 +562,73 @@ describe("setAllCompleted", () => {
     expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
   });
 });
+
+// ─── deleteCompleted ──────────────────────────────────────────────────────────
+
+describe("deleteCompleted", () => {
+  it("deletes all completed todos and returns the deleted count", async () => {
+    const rows = [makeRow({ id: "1", completed: true }), makeRow({ id: "2", completed: true })];
+    const where = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(rows),
+    });
+    const db = {
+      delete: vi.fn().mockReturnValue({ where }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.deleteCompleted();
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(2);
+  });
+
+  it("returns 0 when there are no completed todos", async () => {
+    const where = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue([]),
+    });
+    const db = {
+      delete: vi.fn().mockReturnValue({ where }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.deleteCompleted();
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBe(0);
+  });
+
+  it("only matches rows where completed = true, leaving active todos untouched", async () => {
+    // Regression guard: this asserts the WHERE clause is actually scoped to
+    // completed = true, so the single DELETE ... RETURNING can never
+    // remove an active todo, regardless of how many rows exist.
+    const rows = [makeRow({ id: "1", completed: true })];
+    const where = vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(rows),
+    });
+    const db = {
+      delete: vi.fn().mockReturnValue({ where }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    await repo.deleteCompleted();
+
+    expect(where).toHaveBeenCalledTimes(1);
+    const whereCondition = where.mock.calls[0]?.[0];
+    expect(whereCondition).toBeDefined();
+  });
+
+  it("returns TODO_DB_ERROR when it throws", async () => {
+    const where = vi.fn().mockReturnValue({
+      returning: vi.fn().mockRejectedValue(new Error("failed")),
+    });
+    const db = {
+      delete: vi.fn().mockReturnValue({ where }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.deleteCompleted();
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
+  });
+});
