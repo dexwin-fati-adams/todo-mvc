@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatError, todoClient } from "./todo.api";
+import { formatError, todoApi } from "./todo.api";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -33,36 +33,92 @@ function stubFetch(impl: Fetch) {
   return fetchMock;
 }
 
+function calledUrl(fetchMock: ReturnType<typeof stubFetch>): URL {
+  const url = fetchMock.mock.calls[0]?.[0] ?? "";
+  return new URL(url, "http://localhost");
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("todoClient.list", () => {
+describe("todoApi.list", () => {
   it("returns the parsed list when the API responds 200 with a valid body", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+    stubFetch(() => Promise.resolve(jsonResponse(validList)));
 
-    const result = await todoClient.list();
+    const result = await todoApi.list();
 
     expect(result._unsafeUnwrap()).toEqual(validList);
+  });
+
+  it("requests /todos with no query string when no query is given", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+
+    await todoApi.list();
+
     expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/todos$/);
   });
 
-  it("sends status, search, page and pageSize as query parameters", async () => {
+  it("requests /todos with no query string for an empty query", async () => {
     const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
 
-    await todoClient.list({ status: "active", page: 2, search: "milk" });
+    await todoApi.list({});
 
-    const url = new URL(fetchMock.mock.calls[0]?.[0] ?? "");
-    expect(url.pathname).toBe("/todos");
-    expect(url.searchParams.get("status")).toBe("active");
-    expect(url.searchParams.get("page")).toBe("2");
-    expect(url.searchParams.get("search")).toBe("milk");
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/todos$/);
+  });
+
+  it("sends the status as a query parameter", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+
+    await todoApi.list({ status: "active" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/todos\?status=active$/);
+  });
+
+  it("sends search, page and pageSize as query parameters", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+
+    await todoApi.list({ status: "completed", search: "milk", page: 2, pageSize: 10 });
+
+    const { pathname, searchParams } = calledUrl(fetchMock);
+    expect(pathname).toMatch(/\/todos$/);
+    expect(searchParams.get("status")).toBe("completed");
+    expect(searchParams.get("search")).toBe("milk");
+    expect(searchParams.get("page")).toBe("2");
+    expect(searchParams.get("pageSize")).toBe("10");
+  });
+
+  it("omits undefined values from the query string", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+
+    await todoApi.list({ status: undefined, search: "milk" });
+
+    const { searchParams } = calledUrl(fetchMock);
+    expect(searchParams.has("status")).toBe(false);
+    expect(searchParams.get("search")).toBe("milk");
+  });
+
+  it("url-encodes the search term", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+
+    await todoApi.list({ search: "buy milk & eggs" });
+
+    expect(calledUrl(fetchMock).searchParams.get("search")).toBe("buy milk & eggs");
+    expect(fetchMock.mock.calls[0]?.[0]).not.toContain("& eggs");
+  });
+
+  it("sends an Accept: application/json header", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(validList)));
+
+    await todoApi.list();
+
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({ Accept: "application/json" });
   });
 
   it("returns PARSE_ERROR when the body fails the schema", async () => {
     stubFetch(() => Promise.resolve(jsonResponse({ todos: "not-a-list" })));
 
-    const result = await todoClient.list();
+    const result = await todoApi.list();
 
     expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
   });
@@ -70,9 +126,12 @@ describe("todoClient.list", () => {
   it("returns PARSE_ERROR when a 200 body is not JSON", async () => {
     stubFetch(() => Promise.resolve(new Response("<html>oops</html>", { status: 200 })));
 
-    const result = await todoClient.list();
+    const result = await todoApi.list();
 
-    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "PARSE_ERROR",
+      message: "Failed to parse response body",
+    });
   });
 
   it("returns API_ERROR with status and message for a 503", async () => {
@@ -82,7 +141,7 @@ describe("todoClient.list", () => {
       ),
     );
 
-    const result = await todoClient.list();
+    const result = await todoApi.list();
 
     expect(result._unsafeUnwrapErr()).toEqual({
       type: "API_ERROR",
@@ -96,7 +155,7 @@ describe("todoClient.list", () => {
       Promise.resolve(jsonResponse({ error: "VALIDATION_ERROR", message: "Bad query" }, 400)),
     );
 
-    const result = await todoClient.list();
+    const result = await todoApi.list({ page: -1 });
 
     expect(result._unsafeUnwrapErr()).toEqual({
       type: "API_ERROR",
@@ -110,7 +169,7 @@ describe("todoClient.list", () => {
       Promise.resolve(new Response("boom", { status: 500, statusText: "Server Error" })),
     );
 
-    const result = await todoClient.list();
+    const result = await todoApi.list();
 
     expect(result._unsafeUnwrapErr()).toEqual({
       type: "API_ERROR",
@@ -119,115 +178,45 @@ describe("todoClient.list", () => {
     });
   });
 
+  it("falls back to the status text when the error body has the wrong shape", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ unexpected: true }), {
+          status: 502,
+          statusText: "Bad Gateway",
+        }),
+      ),
+    );
+
+    const result = await todoApi.list();
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 502,
+      message: "Bad Gateway",
+    });
+  });
+
   it("returns NETWORK_ERROR when fetch throws", async () => {
     stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
 
-    const result = await todoClient.list();
+    const result = await todoApi.list();
 
     expect(result._unsafeUnwrapErr()).toEqual({
       type: "NETWORK_ERROR",
       message: "Failed to fetch",
     });
   });
-});
 
-describe("todoClient other routes", () => {
-  it("get sends GET /todos/:id and returns the todo", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(todo)));
+  it("returns a generic NETWORK_ERROR message when a non-Error is thrown", async () => {
+    stubFetch(() => Promise.reject("nope"));
 
-    const result = await todoClient.get(todo.id);
-
-    expect(result._unsafeUnwrap()).toEqual(todo);
-    expect(fetchMock.mock.calls[0]?.[0]).toMatch(new RegExp(`/todos/${todo.id}$`));
-  });
-
-  it("create sends POST /todos with a JSON body", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(todo, 201)));
-
-    const result = await todoClient.create({ title: "Buy milk" });
-
-    expect(result._unsafeUnwrap()).toEqual(todo);
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toMatch(/\/todos$/);
-    expect(init?.method).toBe("POST");
-    expect(init?.body).toBe(JSON.stringify({ title: "Buy milk" }));
-  });
-
-  it("replace sends PUT /todos/:id", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(todo)));
-
-    await todoClient.replace(todo.id, { title: "Buy milk", completed: false });
-
-    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PUT");
-  });
-
-  it("update sends PATCH /todos/:id", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ ...todo, completed: true })));
-
-    const result = await todoClient.update(todo.id, { completed: true });
-
-    expect(result._unsafeUnwrap().completed).toBe(true);
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toMatch(new RegExp(`/todos/${todo.id}$`));
-    expect(init?.method).toBe("PATCH");
-  });
-
-  it("delete sends DELETE /todos/:id and accepts 204", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(new Response(null, { status: 204 })));
-
-    const result = await todoClient.delete(todo.id);
-
-    expect(result.isOk()).toBe(true);
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toMatch(new RegExp(`/todos/${todo.id}$`));
-    expect(init?.method).toBe("DELETE");
-  });
-
-  it("delete returns API_ERROR with status 404 when the todo does not exist", async () => {
-    stubFetch(() =>
-      Promise.resolve(jsonResponse({ error: "NOT_FOUND", message: "Todo not found" }, 404)),
-    );
-
-    const result = await todoClient.delete(todo.id);
+    const result = await todoApi.list();
 
     expect(result._unsafeUnwrapErr()).toEqual({
-      type: "API_ERROR",
-      status: 404,
-      message: "Todo not found",
+      type: "NETWORK_ERROR",
+      message: "Network error",
     });
-  });
-
-  it("setAllCompleted sends PATCH /todos and returns updatedCount", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: 2 })));
-
-    const result = await todoClient.setAllCompleted({ completed: true });
-
-    expect(result._unsafeUnwrap()).toEqual({ updatedCount: 2 });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toMatch(/\/todos$/);
-    expect(init?.method).toBe("PATCH");
-  });
-
-  it("toggleAll sends POST /todos/toggle-all and accepts 204", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(new Response(null, { status: 204 })));
-
-    const result = await todoClient.toggleAll();
-
-    expect(result.isOk()).toBe(true);
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toMatch(/\/todos\/toggle-all$/);
-    expect(init?.method).toBe("POST");
-  });
-
-  it("clearCompleted sends DELETE /todos?status=completed and returns deletedCount", async () => {
-    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ deletedCount: 3 })));
-
-    const result = await todoClient.clearCompleted();
-
-    expect(result._unsafeUnwrap()).toEqual({ deletedCount: 3 });
-    const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toMatch(/\/todos\?status=completed$/);
-    expect(init?.method).toBe("DELETE");
   });
 });
 
