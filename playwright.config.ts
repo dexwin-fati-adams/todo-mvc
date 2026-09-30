@@ -25,22 +25,33 @@ export default defineConfig({
     trace: "on-first-retry",
   },
 
-  /* No browser projects: these are API request tests, not browser tests.
-   * A single default project avoids running the same spec file 3x. */
+  /* A single default project avoids running the same spec file 3x. The API
+   * tests use the `request` fixture and the browser tests use the `page`
+   * fixture, so both run in this one project. */
   projects: [{ name: "api" }],
 
-  webServer: {
-    command: "pnpm --filter api dev",
-    url: "http://localhost:3001/todos",
-    reuseExistingServer: false,
-    timeout: 30_000,
-    stdout: "pipe",
-    stderr: "pipe",
-    env: {
-      DATABASE_URL: "postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db",
-      PORT: "3001",
-      HOST: "127.0.0.1",
-      CORS_ORIGIN: "http://localhost:3000",
+  webServer: [
+    {
+      command: "pnpm --filter api dev",
+      url: "http://localhost:3001/todos",
+      reuseExistingServer: false,
+      timeout: 30_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        DATABASE_URL: "postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db",
+        PORT: "3001",
+        HOST: "127.0.0.1",
+        CORS_ORIGIN: "http://localhost:3000",
+      },
     },
-  },
+    {
+      command: "pnpm --filter web dev",
+      url: "http://localhost:3000",
+      reuseExistingServer: false,
+      timeout: 30_000,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  ],
 });

@@ -455,6 +455,93 @@ test.describe("POST /todos/toggle-all", () => {
   });
 });
 
+test.describe("Todo list page (browser)", () => {
+  const WEB_URL = "http://localhost:3000";
+  const CORS = { "access-control-allow-origin": "*" };
+  const isTodosList = (url: URL) => url.port === "3001" && url.pathname === "/todos";
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+  const triggerRefetch = () =>
+    document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+
+  test("shows the todos from the API and marks completed ones", async ({ page, request }) => {
+    await createTodo(request, "Buy milk");
+    const dog = await createTodo(request, "Walk dog");
+    await request.put(`/todos/${dog.id}`, { data: { title: dog.title, completed: true } });
+
+    await page.goto(WEB_URL);
+
+    const items = page.getByRole("listitem");
+    await expect(items).toHaveCount(2);
+    await expect(items.filter({ hasText: "Buy milk" })).not.toContainText("Completed");
+    await expect(items.filter({ hasText: "Walk dog" })).toContainText("Completed");
+  });
+
+  test("shows the empty message when there are no todos", async ({ page }) => {
+    await page.goto(WEB_URL);
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page.getByRole("list")).toHaveCount(0);
+  });
+
+  test("shows a safe error with Retry when the first load fails, then recovers", async ({
+    page,
+    request,
+  }) => {
+    await createTodo(request, "Buy milk");
+    await page.route(isTodosList, (route) =>
+      route.fulfill({ status: 503, headers: CORS, json: unavailable }),
+    );
+
+    await page.goto(WEB_URL);
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible();
+    await expect(page.getByRole("list")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+
+    await page.unroute(isTodosList);
+    await alert.getByRole("button", { name: "Retry" }).click();
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("keeps the todos and shows Refreshing while a refetch is in flight", async ({
+    page,
+    request,
+  }) => {
+    await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+
+    await page.route(isTodosList, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    });
+    await page.evaluate(triggerRefetch);
+
+    await expect(page.getByRole("status")).toContainText("Refreshing");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("status")).toHaveCount(0);
+  });
+
+  test("keeps the todos and shows a safe error when a refetch fails", async ({ page, request }) => {
+    await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+
+    await page.route(isTodosList, (route) =>
+      route.fulfill({ status: 503, headers: CORS, json: unavailable }),
+    );
+    await page.evaluate(triggerRefetch);
+
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+  });
+});
+
 let closed = false;
 test.afterAll(async () => {
   if (closed) return;

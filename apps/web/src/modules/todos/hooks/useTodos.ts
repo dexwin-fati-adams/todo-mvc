@@ -2,8 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { ResultAsync } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Status, TodoListResponse } from "contracts";
-import { formatError, todoApi, type ClientError } from "../todo.api";
+import { formatError, todoApi, type ClientError } from "@/modules/todos/todo.api";
 
+///This code defines all the possible todo loading states and creates a special error type
+// that keeps the original API error while giving it a readable message.
 export type TodoServerState =
   "initial-loading" | "initial-failure" | "empty" | "ready" | "refreshing" | "refresh-failure";
 
@@ -17,6 +19,8 @@ export class TodoQueryError extends Error {
   }
 }
 
+//This function takes the API result, returns the data if the request succeeds,
+//  and throws a TodoQueryError if the request fails
 const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
   result.match(
     (data) => data,
@@ -25,6 +29,8 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
     },
   );
 
+//This function looks at whether the todos are loading, failed, empty, refreshing, or successfully loaded,
+// and then returns the correct TodoServerState for the UI.
 function deriveServerState(input: {
   hasData: boolean;
   isError: boolean;
@@ -40,6 +46,8 @@ function deriveServerState(input: {
     .otherwise(() => "ready" as const);
 }
 
+//useTodos is a custom React hook that fetches todos from the backend, tracks whether the request is loading/failed/empty/ready,
+//  and gives the UI the todos, error, and a way to refresh them.
 export function useTodos(status: Status = "all") {
   const query = useQuery<TodoListResponse, TodoQueryError>({
     queryKey: ["todos", status],
