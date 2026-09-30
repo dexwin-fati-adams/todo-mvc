@@ -25,9 +25,16 @@ function errorMessage(error: ClientError | null): string {
 
 function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: () => void }) {
   return (
-    <div role="alert" className="todo-error">
-      <p>{errorMessage(error)}</p>
-      <button type="button" onClick={onRetry}>
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-4 bg-red-50 px-4 py-3 text-red-900"
+    >
+      <p className="m-0">{errorMessage(error)}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="rounded border border-current px-3 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+      >
         Retry
       </button>
     </div>
@@ -35,7 +42,7 @@ function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: (
 }
 
 function EmptyMessage() {
-  return <p className="todo-empty">No todos yet.</p>;
+  return <p className="m-0 p-4 text-center text-slate-600">No todos yet.</p>;
 }
 
 function ListOrEmpty({ todos }: { todos: Todo[] }) {
@@ -45,7 +52,7 @@ function ListOrEmpty({ todos }: { todos: Todo[] }) {
 export function TodoView({ state, todos, error, onRetry }: TodoViewProps) {
   return match(state)
     .with("initial-loading", () => (
-      <p role="status" className="todo-loading">
+      <p role="status" className="m-0 p-4 text-center text-slate-600">
         Loading todos…
       </p>
     ))
@@ -54,7 +61,7 @@ export function TodoView({ state, todos, error, onRetry }: TodoViewProps) {
     .with("ready", () => <TodoList todos={todos} />)
     .with("refreshing", () => (
       <section aria-busy="true">
-        <p role="status" className="todo-refreshing">
+        <p role="status" className="m-0 p-2 text-center text-sm text-slate-600">
           Refreshing…
         </p>
         <ListOrEmpty todos={todos} />
