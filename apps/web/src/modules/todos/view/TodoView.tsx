@@ -1,7 +1,7 @@
 import { match } from "ts-pattern";
 import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
-import type { ClientError } from "@/modules/todos/todo.api";
+import type { ClientError } from "@/api/todo.api";
 import { TodoList } from "@/modules/todos/components/TodoList";
 
 export type TodoViewProps = {

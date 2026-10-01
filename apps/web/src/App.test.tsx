@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { okAsync } from "neverthrow";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "@/App";
-import { todoApi } from "@/modules/todos/todo.api";
+import { todoApi } from "@/api/todo.api";
 
 afterEach(() => {
   vi.restoreAllMocks();
