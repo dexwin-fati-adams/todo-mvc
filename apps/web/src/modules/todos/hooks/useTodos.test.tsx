@@ -7,7 +7,7 @@ import type { Status } from "contracts";
 import { todoApi } from "@/api/todo.api";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 
-vi.mock("@/modules/todos/todo.api", async (importOriginal) => ({
+vi.mock("@/api/todo.api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/todo.api")>()),
   todoApi: {
     list: vi.fn(),
@@ -50,7 +50,7 @@ function neverResolves<T>(): ResultAsync<T, never> {
 
 function createWrapper() {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: { queries: { retry: false } },
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
