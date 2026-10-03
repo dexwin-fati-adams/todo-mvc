@@ -4,8 +4,8 @@ import type { CreateTodoRequest, Todo } from "contracts";
 import { todoApi, type ClientError } from "@/api/todo.api";
 import { TodoQueryError } from "@/modules/todos/hooks/useTodos";
 
-//TanStack Query needs a rejected promise, so this turns a failed Result into a thrown TodoQueryError that still
-// carries the original ClientError inside it.
+//This code takes the result from an API request, returns the data if successful, but if it fails, it throws a TodoQueryError 
+// so the application knows something went wrong.
 const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
   result.match(
     (data) => data,
@@ -14,9 +14,8 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
     },
   );
 
-//useCreateTodo wraps todoApi.create in a mutation. After a successful create it refreshes every todos list query,
-// and it waits for that refresh, so the list is up to date by the time submit resolves.
-//submit never throws. It resolves with the new todo, or with the typed ClientError when the create fails.
+//This code creates a custom React hook that handles creating a new todo, sends it to the backend, updates the todo list when successful, 
+// and manages loading and error states.
 export function useCreateTodo() {
   const queryClient = useQueryClient();
 
