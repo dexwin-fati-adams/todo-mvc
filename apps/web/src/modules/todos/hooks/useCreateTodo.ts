@@ -4,7 +4,7 @@ import type { CreateTodoRequest, Todo } from "contracts";
 import { todoApi, type ClientError } from "@/api/todo.api";
 import { TodoQueryError } from "@/modules/todos/hooks/useTodos";
 
-//This code takes the result from an API request, returns the data if successful, but if it fails, it throws a TodoQueryError 
+//This code takes the result from an API request, returns the data if successful, but if it fails, it throws a TodoQueryError
 // so the application knows something went wrong.
 const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
   result.match(
@@ -14,7 +14,7 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
     },
   );
 
-//This code creates a custom React hook that handles creating a new todo, sends it to the backend, updates the todo list when successful, 
+//This code creates a custom React hook that handles creating a new todo, sends it to the backend, updates the todo list when successful,
 // and manages loading and error states.
 export function useCreateTodo() {
   const queryClient = useQueryClient();
