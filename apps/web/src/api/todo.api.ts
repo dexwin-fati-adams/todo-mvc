@@ -1,7 +1,13 @@
 import { match, P } from "ts-pattern";
 import { err, errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow";
 import type { z } from "zod";
-import { ErrorResponseSchema, TodoListResponseSchema, type Status } from "contracts";
+import {
+  ErrorResponseSchema,
+  TodoListResponseSchema,
+  type CreateTodoRequest,
+  type Status,
+  type Todo,
+} from "contracts";
 import { config } from "@/config";
 
 //These lines define the three possible types of errors—API, network, and parsing errors—and combine them into one ClientError
@@ -88,6 +94,12 @@ function toQueryString(query: ListQuery): string {
 }
 //This creates a list function that asks the backend for todos, adds any filters to the /todos URL,
 // and checks that the response has the correct todo format.
+//create is only a placeholder for now. It always returns a "not implemented" error, so the create tests fail
+// because the real behaviour is missing, and not because an import is broken. The next step replaces it.
 export const todoApi = {
   list: (query: ListQuery = {}) => request(`/todos${toQueryString(query)}`, TodoListResponseSchema),
+  create: (body: CreateTodoRequest) => {
+    void body;
+    return errAsync<Todo, ClientError>({ type: "NETWORK_ERROR", message: "not implemented" });
+  },
 };
