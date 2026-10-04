@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Route } from "@playwright/test";
 import { createDb, type Db } from "@/lib/db.js";
 import { config } from "@/lib/config.js";
 import { sql } from "drizzle-orm";
@@ -456,9 +456,9 @@ test.describe("POST /todos/toggle-all", () => {
 });
 
 test.describe("Todo list page (browser)", () => {
-  const WEB_URL = "http://localhost:3000";
+  const WEB_URL = "http://localhost:4000";
   const CORS = { "access-control-allow-origin": "*" };
-  const isTodosList = (url: URL) => url.port === "3001" && url.pathname === "/todos";
+  const isTodosList = (url: URL) => url.port === "4001" && url.pathname === "/todos";
   const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
   const triggerRefetch = () =>
     document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
@@ -539,6 +539,110 @@ test.describe("Todo list page (browser)", () => {
     await expect(page.getByRole("alert")).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+  });
+});
+
+test.describe("Create todo form (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const LABEL = "What needs to be done?";
+  const CORS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "*",
+  };
+  const isTodosCollection = (url: URL) => url.port === "4001" && url.pathname === "/todos";
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+
+  test("adds a todo, shows it in the list, clears the field and keeps focus in the field", async ({
+    page,
+    request,
+  }) => {
+    await page.goto(WEB_URL);
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+
+    const field = page.getByLabel(LABEL);
+    await field.fill("Buy milk");
+    await page.getByRole("button", { name: "Add todo" }).click();
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("listitem")).toContainText("Buy milk");
+    await expect(field).toHaveValue("");
+    await expect(field).toBeFocused();
+
+    const list = (await (await request.get("/todos")).json()) as TodoListResponse;
+    expect(list.todos.map((t) => t.title)).toEqual(["Buy milk"]);
+  });
+
+  test("shows the message and sends no request for an empty or whitespace-only title", async ({
+    page,
+  }) => {
+    const posts: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "POST") posts.push(req.url());
+    });
+    await page.goto(WEB_URL);
+
+    const field = page.getByLabel(LABEL);
+    await page.getByRole("button", { name: "Add todo" }).click();
+    await expect(page.getByRole("alert")).toHaveText("Enter a title for your todo.");
+    await expect(field).toBeFocused();
+
+    await field.fill("     ");
+    await page.getByRole("button", { name: "Add todo" }).click();
+    await expect(page.getByRole("alert")).toHaveText("Enter a title for your todo.");
+
+    expect(posts).toEqual([]);
+  });
+
+  test("creates only one todo when the user submits twice", async ({ page, request }) => {
+    await page.route(isTodosCollection, async (route) => {
+      if (route.request().method() === "POST") {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      await route.continue();
+    });
+    await page.goto(WEB_URL);
+
+    const field = page.getByLabel(LABEL);
+    await field.fill("Buy milk");
+    await page.getByRole("button", { name: "Add todo" }).click();
+
+    await expect(page.getByRole("button", { name: "Adding…" })).toBeVisible();
+    await page.getByRole("button", { name: "Adding…" }).click({ force: true });
+    await field.press("Enter");
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    const list = (await (await request.get("/todos")).json()) as TodoListResponse;
+    expect(list.totalItems).toBe(1);
+  });
+
+  test("shows a safe message for a 503, keeps the title, and a retry adds the todo", async ({
+    page,
+  }) => {
+    const failPosts = (route: Route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodosCollection, failPosts);
+    await page.goto(WEB_URL);
+
+    const field = page.getByLabel(LABEL);
+    await field.fill("Buy milk");
+    await page.getByRole("button", { name: "Add todo" }).click();
+
+    await expect(page.getByRole("alert")).toHaveText(
+      "We couldn't add your todo. Please try again.",
+    );
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    await expect(field).toHaveValue("Buy milk");
+    await expect(field).toBeFocused();
+
+    await page.unroute(isTodosCollection, failPosts);
+    await page.getByRole("button", { name: "Add todo" }).click();
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });
 

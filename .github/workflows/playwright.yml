@@ -27,9 +27,9 @@ jobs:
 
     env:
       DATABASE_URL: postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db
-      PORT: "3001"
+      PORT: "4001"
       HOST: "127.0.0.1"
-      CORS_ORIGIN: "http://localhost:3000"
+      CORS_ORIGIN: "http://localhost:4000"
 
     steps:
       - uses: actions/checkout@v4

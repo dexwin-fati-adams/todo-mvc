@@ -2,9 +2,9 @@ import { defineConfig } from "@playwright/test";
 
 process.env.DATABASE_URL =
   "postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db";
-process.env.PORT = "3001";
+process.env.PORT = "4001";
 process.env.HOST = "127.0.0.1";
-process.env.CORS_ORIGIN = "http://localhost:3000";
+process.env.CORS_ORIGIN = "http://localhost:4000";
 
 export default defineConfig({
   testDir: "./apps/api/src/modules/todos",
@@ -21,7 +21,7 @@ export default defineConfig({
   reporter: "html",
 
   use: {
-    baseURL: "http://localhost:3001",
+    baseURL: "http://localhost:4001",
     trace: "on-first-retry",
   },
 
@@ -33,21 +33,21 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm --filter api dev",
-      url: "http://localhost:3001/todos",
+      url: "http://localhost:4001/todos",
       reuseExistingServer: false,
       timeout: 30_000,
       stdout: "pipe",
       stderr: "pipe",
       env: {
         DATABASE_URL: "postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db",
-        PORT: "3001",
+        PORT: "4001",
         HOST: "127.0.0.1",
-        CORS_ORIGIN: "http://localhost:3000",
+        CORS_ORIGIN: "http://localhost:4000",
       },
     },
     {
       command: "pnpm --filter web dev --host 127.0.0.1",
-      url: "http://127.0.0.1:3000",
+      url: "http://127.0.0.1:4000",
       reuseExistingServer: false,
       timeout: 30_000,
       stdout: "pipe",
