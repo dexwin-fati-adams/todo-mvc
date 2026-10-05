@@ -1,7 +1,13 @@
 import { match, P } from "ts-pattern";
 import { err, errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow";
 import type { z } from "zod";
-import { ErrorResponseSchema, TodoListResponseSchema, type Status } from "contracts";
+import {
+  ErrorResponseSchema,
+  TodoListResponseSchema,
+  TodoSchema,
+  type CreateTodoRequest,
+  type Status,
+} from "contracts";
 import { config } from "@/config";
 
 //These lines define the three possible types of errors—API, network, and parsing errors—and combine them into one ClientError
@@ -35,9 +41,18 @@ function toApiError(res: Response): ResultAsync<never, ClientError> {
 }
 
 //send() sends a request to the backend, handles network failures, and checks whether the HTTP response was successful or an API error.
-function send(path: string): ResultAsync<Response, ClientError> {
+//It can also carry a method and a JSON body, and it adds the Content-Type header only when there is a body.
+function send(path: string, init: RequestInit = {}): ResultAsync<Response, ClientError> {
+  const contentTypeHeader = match(init.body !== null && init.body !== undefined)
+    .with(true, () => ({ "Content-Type": "application/json" }))
+    .with(false, () => ({}))
+    .exhaustive();
+
   return ResultAsync.fromPromise(
-    fetch(`${config.apiUrl}${path}`, { headers: { Accept: "application/json" } }),
+    fetch(`${config.apiUrl}${path}`, {
+      ...init,
+      headers: { Accept: "application/json", ...contentTypeHeader, ...init.headers },
+    }),
     (e): ClientError => ({
       type: "NETWORK_ERROR",
       message: e instanceof Error ? e.message : "Network error",
@@ -47,8 +62,12 @@ function send(path: string): ResultAsync<Response, ClientError> {
 
 //request() uses send() to get the response, converts it to JSON, checks that the JSON matches the expected Zod schema,
 //  and returns either valid data or a parsing error.
-function request<T>(path: string, schema: z.ZodType<T>): ResultAsync<T, ClientError> {
-  return send(path).andThen((res) =>
+function request<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  init: RequestInit = {},
+): ResultAsync<T, ClientError> {
+  return send(path, init).andThen((res) =>
     ResultAsync.fromPromise(res.json(), (): ClientError => ({
       type: "PARSE_ERROR",
       message: "Failed to parse response body",
@@ -88,6 +107,9 @@ function toQueryString(query: ListQuery): string {
 }
 //This creates a list function that asks the backend for todos, adds any filters to the /todos URL,
 // and checks that the response has the correct todo format.
+//create sends the new todo's title to the backend with POST /todos and checks that the response is a valid todo.
 export const todoApi = {
   list: (query: ListQuery = {}) => request(`/todos${toQueryString(query)}`, TodoListResponseSchema),
+  create: (body: CreateTodoRequest) =>
+    request("/todos", TodoSchema, { method: "POST", body: JSON.stringify(body) }),
 };

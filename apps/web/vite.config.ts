@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
-  server: { port: 3000 },
+  server: { port: 4000 },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],

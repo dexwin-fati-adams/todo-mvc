@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatError, todoApi } from "@/api/todo.api";
+import { formatError, todoApi } from "@/api/todos/todo.api";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -216,6 +216,82 @@ describe("todoApi.list", () => {
     expect(result._unsafeUnwrapErr()).toEqual({
       type: "NETWORK_ERROR",
       message: "Network error",
+    });
+  });
+});
+
+describe("todoApi.create", () => {
+  it("sends POST /todos with a JSON body and a Content-Type header", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(todo, 201)));
+
+    await todoApi.create({ title: "Buy milk" });
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toMatch(/\/todos$/);
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({ title: "Buy milk" }));
+    expect(init?.headers).toEqual({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("returns the parsed todo for a 201 response", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse(todo, 201)));
+
+    const result = await todoApi.create({ title: "Buy milk" });
+
+    expect(result._unsafeUnwrap()).toEqual(todo);
+  });
+
+  it("returns PARSE_ERROR when the 201 body fails the todo schema", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ id: "not-a-todo" }, 201)));
+
+    const result = await todoApi.create({ title: "Buy milk" });
+
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+  });
+
+  it("returns API_ERROR with status and message for a 400", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "VALIDATION_ERROR", message: "Title cannot be empty" }, 400),
+      ),
+    );
+
+    const result = await todoApi.create({ title: "Buy milk" });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 400,
+      message: "Title cannot be empty",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 503", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Try again later" }, 503),
+      ),
+    );
+
+    const result = await todoApi.create({ title: "Buy milk" });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 503,
+      message: "Try again later",
+    });
+  });
+
+  it("returns NETWORK_ERROR when fetch throws", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const result = await todoApi.create({ title: "Buy milk" });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "NETWORK_ERROR",
+      message: "Failed to fetch",
     });
   });
 });

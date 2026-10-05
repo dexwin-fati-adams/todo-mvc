@@ -10,7 +10,7 @@ process.env.DATABASE_URL =
   "postgres://todo_test_user:todo_test_password@localhost:5435/todo_test_db";
 process.env.PORT ??= "0";
 process.env.HOST ??= "127.0.0.1";
-process.env.CORS_ORIGIN ??= "http://localhost:3000";
+process.env.CORS_ORIGIN ??= "http://localhost:4000";
 
 // A single db connection shared by every describe block below, used only to
 // reset state between tests. There is no DELETE route on the API (delete is

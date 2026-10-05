@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import type { Todo } from "contracts";
 import { describe, expect, it, vi } from "vitest";
-import type { ClientError } from "@/api/todo.api";
+import type { ClientError } from "@/api/todos/todo.api";
 import { TodoView, type TodoViewProps } from "@/modules/todos/view/TodoView";
 
 const active: Todo = {
