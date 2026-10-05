@@ -5,7 +5,7 @@ import { okAsync } from "neverthrow";
 import type { Todo } from "contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "@/App";
-import { todoApi } from "@/api/todos-api/todo.api";
+import { todoApi } from "@/api/todos/todo.api";
 
 const LABEL = "What needs to be done?";
 
