@@ -13,7 +13,12 @@ const FAILED_MESSAGE = "Could not update this todo. Please try again.";
 function toRowMessage(error: ClientError): string {
   return match(error)
     .with({ type: "API_ERROR", status: 404 }, () => STALE_MESSAGE)
-    .with({ type: "API_ERROR" }, { type: "NETWORK_ERROR" }, { type: "PARSE_ERROR" }, () => FAILED_MESSAGE)
+    .with(
+      { type: "API_ERROR" },
+      { type: "NETWORK_ERROR" },
+      { type: "PARSE_ERROR" },
+      () => FAILED_MESSAGE,
+    )
     .exhaustive();
 }
 
@@ -43,7 +48,8 @@ export function TodoFlows({ status = "all" }: { status?: Status }) {
       setPendingIds(new Set(pendingRef.current));
       result.match(
         () => undefined,
-        (failure) => setRowMessages((previous) => ({ ...previous, [todo.id]: toRowMessage(failure) })),
+        (failure) =>
+          setRowMessages((previous) => ({ ...previous, [todo.id]: toRowMessage(failure) })),
       );
     });
   };
