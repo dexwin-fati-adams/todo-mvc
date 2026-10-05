@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ResultAsync } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Status, TodoListResponse } from "contracts";
-import { formatError, todoApi, type ClientError } from "@/api/todo.api";
+import { formatError, todoApi, type ClientError } from "@/api/todos-api/todo.api";
 
 ///This code defines all the possible todo loading states and creates a special error type
 // that keeps the original API error while giving it a readable message.

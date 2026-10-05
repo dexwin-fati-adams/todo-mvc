@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { match } from "ts-pattern";
 import { CreateTodoRequestSchema } from "contracts";
-import type { ClientError } from "@/api/todo.api";
+import type { ClientError } from "@/api/todos-api/todo.api";
 import { useCreateTodo } from "@/modules/todos/hooks/useCreateTodo";
 import { TodoFormView, type TodoFormStatus } from "@/modules/todos/view/TodoFormView";
 

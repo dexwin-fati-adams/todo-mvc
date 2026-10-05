@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { err, ok, type Result, type ResultAsync } from "neverthrow";
 import type { CreateTodoRequest, Todo } from "contracts";
-import { todoApi, type ClientError } from "@/api/todo.api";
+import { todoApi, type ClientError } from "@/api/todos-api/todo.api";
 import { TodoQueryError } from "@/modules/todos/hooks/useTodos";
 
 //This code takes the result from an API request, returns the data if successful, but if it fails, it throws a TodoQueryError

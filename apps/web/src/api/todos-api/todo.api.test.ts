@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatError, todoApi } from "@/api/todo.api";
+import { formatError, todoApi } from "@/api/todos-api/todo.api";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 

@@ -4,11 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow";
 import type { ReactNode } from "react";
 import type { Todo } from "contracts";
-import { todoApi, type ClientError } from "@/api/todo.api";
+import { todoApi, type ClientError } from "@/api/todos-api/todo.api";
 import { useCreateTodo } from "@/modules/todos/hooks/useCreateTodo";
 
-vi.mock("@/api/todo.api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/api/todo.api")>()),
+vi.mock("@/api/todos-api/todo.api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/todos-api/todo.api")>()),
   todoApi: {
     list: vi.fn(),
     create: vi.fn(),
