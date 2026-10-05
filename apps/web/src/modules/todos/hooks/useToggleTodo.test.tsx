@@ -5,7 +5,7 @@ import { errAsync, okAsync, type Result } from "neverthrow";
 import type { ReactNode } from "react";
 import type { Todo } from "contracts";
 import { todoApi, type ClientError } from "@/api/todos/todo.api";
-import { useToggleTodo } from "./useCreateTodo";
+import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 
 vi.mock("@/api/todos/todo.api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/todos/todo.api")>()),

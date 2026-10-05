@@ -22,12 +22,24 @@ const done: Todo = {
 
 const networkError: ClientError = { type: "NETWORK_ERROR", message: "secret-internal-detail" };
 
+function viewProps(props: Partial<TodoViewProps> = {}): TodoViewProps {
+  return {
+    state: "ready",
+    todos: [active, done],
+    error: null,
+    onRetry: vi.fn(),
+    onToggle: vi.fn(),
+    pendingIds: new Set(),
+    rowMessages: {},
+    ...props,
+  };
+}
+
 function renderView(props: Partial<TodoViewProps> = {}) {
   const onRetry = vi.fn();
-  const utils = render(
-    <TodoView state="ready" todos={[active, done]} error={null} onRetry={onRetry} {...props} />,
-  );
-  return { ...utils, onRetry };
+  const onToggle = vi.fn();
+  const utils = render(<TodoView {...viewProps({ onRetry, onToggle, ...props })} />);
+  return { ...utils, onRetry, onToggle };
 }
 
 describe("TodoView", () => {
@@ -54,12 +66,11 @@ describe("TodoView", () => {
     expect(items[1]).toHaveTextContent("Walk the dog");
   });
 
-  it("marks completed todos in text, not only by style", () => {
+  it("marks completed todos with a checked checkbox, not only by style", () => {
     renderView();
 
-    const [first, second] = within(screen.getByRole("list")).getAllByRole("listitem");
-    expect(first).not.toHaveTextContent(/completed/i);
-    expect(second).toHaveTextContent(/completed/i);
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Walk the dog" })).toBeChecked();
   });
 
   it("initial-failure shows an alert and Retry, and hides the list", async () => {
@@ -97,6 +108,63 @@ describe("TodoView", () => {
   });
 });
 
+describe("TodoView completion checkbox", () => {
+  it("passes onToggle through to the row checkbox", async () => {
+    const { onToggle } = renderView();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(onToggle).toHaveBeenCalledWith(active);
+  });
+
+  it("shows Updating… and blocks the checkbox for a pending row", async () => {
+    const { onToggle } = renderView({ pendingIds: new Set([active.id]) });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("shows the row message for the row it belongs to", () => {
+    renderView({ rowMessages: { [active.id]: "Could not update this todo. Try again." } });
+
+    const [first, second] = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(within(first!).getByRole("alert")).toHaveTextContent(
+      "Could not update this todo. Try again.",
+    );
+    expect(within(second!).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it.each<{ name: string; next: Partial<TodoViewProps> }>([
+    { name: "refreshing", next: { state: "refreshing" } },
+    { name: "refresh-failure", next: { state: "refresh-failure", error: networkError } },
+  ])("keeps the same checkbox element and its focus when ready becomes $name", ({ next }) => {
+    const onToggle = vi.fn();
+    const { rerender } = render(<TodoView {...viewProps({ onToggle })} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+    checkbox.focus();
+    expect(checkbox).toHaveFocus();
+
+    rerender(<TodoView {...viewProps({ onToggle, ...next })} />);
+
+    const after = screen.getByRole("checkbox", { name: "Buy milk" });
+    expect(after).toBe(checkbox);
+    expect(after).toHaveFocus();
+  });
+
+  it("keeps the same checkbox element and its focus when refreshing becomes ready", () => {
+    const { rerender } = render(<TodoView {...viewProps({ state: "refreshing" })} />);
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+    checkbox.focus();
+
+    rerender(<TodoView {...viewProps({ state: "ready" })} />);
+
+    const after = screen.getByRole("checkbox", { name: "Buy milk" });
+    expect(after).toBe(checkbox);
+    expect(after).toHaveFocus();
+  });
+});
+
 describe("TodoView accessibility", () => {
   const cases: { name: string; props: Partial<TodoViewProps> }[] = [
     { name: "initial-loading", props: { state: "initial-loading", todos: [] } },
@@ -108,6 +176,11 @@ describe("TodoView accessibility", () => {
     { name: "ready", props: { state: "ready" } },
     { name: "refreshing", props: { state: "refreshing" } },
     { name: "refresh-failure", props: { state: "refresh-failure", error: networkError } },
+    { name: "ready with a pending row", props: { pendingIds: new Set([active.id]) } },
+    {
+      name: "ready with a row message",
+      props: { rowMessages: { [active.id]: "Could not update this todo. Try again." } },
+    },
   ];
 
   it.each(cases)("$name has no axe violations", async ({ props }) => {
