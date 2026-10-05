@@ -472,8 +472,8 @@ test.describe("Todo list page (browser)", () => {
 
     const items = page.getByRole("listitem");
     await expect(items).toHaveCount(2);
-    await expect(items.filter({ hasText: "Buy milk" })).not.toContainText("Completed");
-    await expect(items.filter({ hasText: "Walk dog" })).toContainText("Completed");
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Walk dog" })).toBeChecked();
   });
 
   test("shows the empty message when there are no todos", async ({ page }) => {
@@ -643,6 +643,152 @@ test.describe("Create todo form (browser)", () => {
 
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+});
+
+test.describe("Toggle todo checkbox (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const CORS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "*",
+  };
+  const isTodoItem = (url: URL) => url.port === "4001" && /^\/todos\/[^/]+$/.test(url.pathname);
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+
+  async function getTodo(request: APIRequestContext, id: string): Promise<Todo> {
+    return (await (await request.get(`/todos/${id}`)).json()) as Todo;
+  }
+
+  test("completes a todo from its checkbox, and the API returns completed: true", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+
+    const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
+    await expect(checkbox).not.toBeChecked();
+    await checkbox.click();
+
+    await expect(checkbox).toBeChecked();
+    await expect(page.locator("li span", { hasText: "Buy milk" })).toHaveClass(/line-through/);
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect((await getTodo(request, milk.id)).completed).toBe(true);
+
+    await page.reload();
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).toBeChecked();
+  });
+
+  test("makes a completed todo active again from its checkbox", async ({ page, request }) => {
+    const dog = await createTodo(request, "Walk dog");
+    await request.patch(`/todos/${dog.id}`, { data: { completed: true } });
+    await page.goto(WEB_URL);
+
+    const checkbox = page.getByRole("checkbox", { name: "Walk dog" });
+    await expect(checkbox).toBeChecked();
+    await checkbox.click();
+
+    await expect(checkbox).not.toBeChecked();
+    await expect(page.locator("li span", { hasText: "Walk dog" })).not.toHaveClass(/line-through/);
+    expect((await getTodo(request, dog.id)).completed).toBe(false);
+  });
+
+  test("sends only one PATCH request when the user changes a pending row again", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    const patches: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PATCH") patches.push(req.url());
+    });
+    await page.route(isTodoItem, async (route) => {
+      if (route.request().method() === "PATCH") {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      await route.continue();
+    });
+    await page.goto(WEB_URL);
+
+    const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
+    await checkbox.click();
+
+    await expect(page.getByRole("status")).toHaveText("Updating…");
+    await expect(checkbox).toHaveAttribute("aria-disabled", "true");
+    await checkbox.click({ force: true });
+    await checkbox.press("Space");
+
+    await expect(checkbox).toBeChecked();
+    await expect(page.getByRole("status")).toHaveCount(0);
+    expect(patches).toHaveLength(1);
+    expect((await getTodo(request, milk.id)).completed).toBe(true);
+  });
+
+  test("keeps the old state and shows a safe message for a 503, and a retry works", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    const failPatches = (route: Route) =>
+      route.request().method() === "PATCH"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodoItem, failPatches);
+    await page.goto(WEB_URL);
+
+    const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
+    await checkbox.click();
+
+    await expect(page.getByRole("alert")).toHaveText(
+      "Could not update this todo. Please try again.",
+    );
+    await expect(checkbox).not.toBeChecked();
+    await expect(checkbox).toBeFocused();
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    expect((await getTodo(request, milk.id)).completed).toBe(false);
+
+    await page.unroute(isTodoItem, failPatches);
+    await checkbox.click();
+
+    await expect(checkbox).toBeChecked();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect((await getTodo(request, milk.id)).completed).toBe(true);
+  });
+
+  test("finds the checkbox by the todo title, and the Space key toggles it", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    const dog = await createTodo(request, "Walk dog");
+    await page.goto(WEB_URL);
+
+    const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+
+    await expect(checkbox).toBeChecked();
+    await expect(checkbox).toBeFocused();
+    expect((await getTodo(request, milk.id)).completed).toBe(true);
+    expect((await getTodo(request, dog.id)).completed).toBe(false);
+  });
+
+  test("shows the stale-data message and refreshes the list when the todo was deleted elsewhere", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).toBeVisible();
+
+    await db.execute(sql`DELETE FROM todos WHERE id = ${milk.id}`);
+    await page.getByRole("checkbox", { name: "Buy milk" }).click();
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
   });
 });
 
