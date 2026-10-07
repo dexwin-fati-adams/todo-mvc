@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatError, todoApi } from "@/api/todos/todo.api";
+import { formatError, todoApi, type UpdateTodoRequest } from "@/api/todos/todo.api";
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -293,6 +293,121 @@ describe("todoApi.create", () => {
       type: "NETWORK_ERROR",
       message: "Failed to fetch",
     });
+  });
+});
+
+describe("todoApi.update", () => {
+  const completedTodo = { ...todo, completed: true };
+
+  it("sends PATCH /todos/:id with a JSON body and a Content-Type header", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(completedTodo)));
+
+    await todoApi.update(todo.id, { completed: true });
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toMatch(new RegExp(`/todos/${todo.id}$`));
+    expect(init?.method).toBe("PATCH");
+    expect(init?.body).toBe(JSON.stringify({ completed: true }));
+    expect(init?.headers).toEqual({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("sends only the completed field, as an absolute value", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(todo)));
+
+    await todoApi.update(todo.id, { completed: false });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ completed: false }));
+  });
+
+  it("encodes the id in the path", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(completedTodo)));
+
+    await todoApi.update("a/b c", { completed: true });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/todos\/a%2Fb%20c$/);
+  });
+
+  it("returns the parsed todo for a 200 response", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse(completedTodo)));
+
+    const result = await todoApi.update(todo.id, { completed: true });
+
+    expect(result._unsafeUnwrap()).toEqual(completedTodo);
+  });
+
+  it("returns PARSE_ERROR when the 200 body fails the todo schema", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ id: "not-a-todo" })));
+
+    const result = await todoApi.update(todo.id, { completed: true });
+
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+  });
+
+  it("returns API_ERROR with status and message for a 400", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "VALIDATION_ERROR", message: "Invalid id" }, 400)),
+    );
+
+    const result = await todoApi.update(todo.id, { completed: true });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 400,
+      message: "Invalid id",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 404", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "NOT_FOUND", message: "Todo not found" }, 404)),
+    );
+
+    const result = await todoApi.update(todo.id, { completed: true });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 404,
+      message: "Todo not found",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 503", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Try again later" }, 503),
+      ),
+    );
+
+    const result = await todoApi.update(todo.id, { completed: true });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 503,
+      message: "Try again later",
+    });
+  });
+
+  it("returns NETWORK_ERROR when fetch throws", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const result = await todoApi.update(todo.id, { completed: true });
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "NETWORK_ERROR",
+      message: "Failed to fetch",
+    });
+  });
+
+  it("makes no request when the body fails the update schema", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(todo)));
+
+    const result = await todoApi.update(todo.id, {} as UpdateTodoRequest);
+
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

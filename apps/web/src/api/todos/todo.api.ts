@@ -5,6 +5,7 @@ import {
   ErrorResponseSchema,
   TodoListResponseSchema,
   TodoSchema,
+  UpdateTodoRequestSchema,
   type CreateTodoRequest,
   type Status,
 } from "contracts";
@@ -17,6 +18,9 @@ type ApiError = { type: "API_ERROR"; status: number; message: string };
 type NetworkError = { type: "NETWORK_ERROR"; message: string };
 type ParseError = { type: "PARSE_ERROR"; message: string };
 export type ClientError = ApiError | NetworkError | ParseError;
+
+//UpdateTodoRequest is the body for PATCH /todos/:id. It is taken from the shared schema, so the adapter and the API agree.
+export type UpdateTodoRequest = z.infer<typeof UpdateTodoRequestSchema>;
 
 //This function takes a ClientError and turns it into a simple, readable error message depending on whether it is an API,
 //  network, or parsing error.
@@ -108,8 +112,23 @@ function toQueryString(query: ListQuery): string {
 //This creates a list function that asks the backend for todos, adds any filters to the /todos URL,
 // and checks that the response has the correct todo format.
 //create sends the new todo's title to the backend with POST /todos and checks that the response is a valid todo.
+//update sends only the changed fields to the backend with PATCH /todos/:id and checks that the response is a valid todo.
+// The body is checked with UpdateTodoRequestSchema first, so an invalid body never leaves the adapter.
+// The id is encoded, so it can only ever be one part of the path.
 export const todoApi = {
   list: (query: ListQuery = {}) => request(`/todos${toQueryString(query)}`, TodoListResponseSchema),
   create: (body: CreateTodoRequest) =>
     request("/todos", TodoSchema, { method: "POST", body: JSON.stringify(body) }),
+  update: (id: string, body: UpdateTodoRequest) => {
+    const parsedBody = UpdateTodoRequestSchema.safeParse(body);
+    return parsedBody.success
+      ? request(`/todos/${encodeURIComponent(id)}`, TodoSchema, {
+          method: "PATCH",
+          body: JSON.stringify(parsedBody.data),
+        })
+      : errAsync<z.infer<typeof TodoSchema>, ClientError>({
+          type: "PARSE_ERROR",
+          message: parsedBody.error.message,
+        });
+  },
 };

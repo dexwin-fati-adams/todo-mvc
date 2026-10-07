@@ -1,13 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { err, ok, type Result } from "neverthrow";
 import type { Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
+import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
 
 vi.mock("@/modules/todos/hooks/useTodos");
+vi.mock("@/modules/todos/hooks/useToggleTodo");
 
 type HookResult = ReturnType<typeof useTodos>;
+type ToggleOutcome = Result<Todo, ClientError>;
 
 const todo: Todo = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -15,6 +20,15 @@ const todo: Todo = {
   completed: false,
   createdAt: "2026-09-29T10:00:00.000Z",
 };
+
+const doneTodo: Todo = {
+  id: "22222222-2222-4222-8222-222222222222",
+  title: "Walk the dog",
+  completed: true,
+  createdAt: "2026-09-29T11:00:00.000Z",
+};
+
+const toggle = vi.fn<(id: string, body: UpdateTodoRequest) => Promise<ToggleOutcome>>();
 
 function givenHook(overrides: Partial<HookResult>) {
   const result: HookResult = {
@@ -28,8 +42,22 @@ function givenHook(overrides: Partial<HookResult>) {
   return result;
 }
 
+//Makes the next toggle() call wait until release() is called, so a test can look at the pending state.
+function holdNextToggle() {
+  let release!: (outcome: ToggleOutcome) => void;
+  toggle.mockReturnValueOnce(
+    new Promise<ToggleOutcome>((resolve) => {
+      release = resolve;
+    }),
+  );
+  return (outcome: ToggleOutcome) => release(outcome);
+}
+
 beforeEach(() => {
   vi.mocked(useTodos).mockReset();
+  toggle.mockReset();
+  toggle.mockResolvedValue(ok(todo));
+  vi.mocked(useToggleTodo).mockReturnValue({ toggle });
 });
 
 describe("TodoFlows", () => {
@@ -113,5 +141,182 @@ describe("TodoFlows", () => {
   ])("renders without crashing for %s", (serverState) => {
     givenHook({ serverState });
     expect(() => render(<TodoFlows />)).not.toThrow();
+  });
+});
+
+describe("TodoFlows completion checkbox", () => {
+  it("sends { completed: true } when an active row is clicked", async () => {
+    givenHook({ todos: [todo] });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(toggle).toHaveBeenCalledWith(todo.id, { completed: true });
+  });
+
+  it("sends { completed: false } when a completed row is clicked", async () => {
+    givenHook({ todos: [doneTodo] });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Walk the dog" }));
+
+    expect(toggle).toHaveBeenCalledWith(doneTodo.id, { completed: false });
+  });
+
+  it("sends no second request for a pending row, by click or by Space", async () => {
+    givenHook({ todos: [todo] });
+    holdNextToggle();
+    render(<TodoFlows />);
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+
+    await userEvent.click(checkbox);
+    await userEvent.click(checkbox);
+    await userEvent.keyboard(" ");
+
+    expect(toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Updating… on the pending row and leaves other rows usable", async () => {
+    givenHook({ todos: [todo, doneTodo] });
+    holdNextToggle();
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    const [first] = screen.getAllByRole("listitem");
+    expect(within(first!).getByRole("status")).toHaveTextContent("Updating…");
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Walk the dog" }));
+
+    expect(toggle).toHaveBeenCalledTimes(2);
+    expect(toggle).toHaveBeenLastCalledWith(doneTodo.id, { completed: false });
+  });
+
+  it("clears the pending message after a success and shows no error", async () => {
+    givenHook({ todos: [todo] });
+    const release = holdNextToggle();
+    render(<TodoFlows />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    release(ok({ ...todo, completed: true }));
+
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("leaves the checkbox in its old state and shows a safe message when the update fails", async () => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValue(err({ type: "API_ERROR", status: 503, message: "Down" }));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not update this todo/i);
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).not.toBeChecked();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows the stale-data message when the todo no longer exists (404)", async () => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValue(err({ type: "API_ERROR", status: 404, message: "Todo not found" }));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/no longer exists/i);
+  });
+
+  it.each<{ name: string; error: ClientError }>([
+    { name: "API", error: { type: "API_ERROR", status: 503, message: "secret-internal-detail" } },
+    { name: "network", error: { type: "NETWORK_ERROR", message: "secret-internal-detail" } },
+    { name: "parse", error: { type: "PARSE_ERROR", message: "secret-internal-detail" } },
+  ])("never shows raw $name error details", async ({ error }) => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValue(err(error));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByText(/secret-internal-detail/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/503/)).not.toBeInTheDocument();
+  });
+
+  it("shows the message on the failed row only", async () => {
+    givenHook({ todos: [todo, doneTodo] });
+    toggle.mockResolvedValue(err({ type: "NETWORK_ERROR", message: "Offline" }));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    await screen.findByRole("alert");
+    const [first, second] = screen.getAllByRole("listitem");
+    expect(within(first!).getByRole("alert")).toBeInTheDocument();
+    expect(within(second!).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("clears the message when the user tries again", async () => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValueOnce(err({ type: "NETWORK_ERROR", message: "Offline" }));
+    render(<TodoFlows />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+    await screen.findByRole("alert");
+    holdNextToggle();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    expect(toggle).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps focus on the checkbox after a success", async () => {
+    givenHook({ todos: [todo] });
+    const release = holdNextToggle();
+    render(<TodoFlows />);
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+    await userEvent.click(checkbox);
+    expect(checkbox).toHaveFocus();
+
+    release(ok({ ...todo, completed: true }));
+
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).toBe(checkbox);
+    expect(checkbox).toHaveFocus();
+  });
+
+  it("keeps focus on the checkbox after a failure", async () => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValue(err({ type: "NETWORK_ERROR", message: "Offline" }));
+    render(<TodoFlows />);
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+
+    await userEvent.click(checkbox);
+
+    await screen.findByRole("alert");
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).toBe(checkbox);
+    expect(checkbox).toHaveFocus();
+  });
+
+  it("allows a new change on the row once the first one has finished", async () => {
+    givenHook({ todos: [todo] });
+    render(<TodoFlows />);
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+
+    await userEvent.click(checkbox);
+    await waitFor(() => expect(checkbox).not.toHaveAttribute("aria-disabled", "true"));
+    await userEvent.click(checkbox);
+
+    expect(toggle).toHaveBeenCalledTimes(2);
   });
 });

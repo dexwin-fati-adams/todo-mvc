@@ -74,7 +74,7 @@ export function TodoCreateFlow() {
           setTitle("");
           setState(IDLE);
         },
-        (error) => setState(failureOf(error)),
+        (error: ClientError) => setState(failureOf(error)),
       );
       inputRef.current?.focus();
     });

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { match } from "ts-pattern";
 import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
@@ -9,7 +10,12 @@ export type TodoViewProps = {
   todos: Todo[];
   error: ClientError | null;
   onRetry: () => void;
+  onToggle: (todo: Todo) => void;
+  pendingIds: ReadonlySet<string>;
+  rowMessages: Readonly<Record<string, string>>;
 };
+
+type RowProps = Pick<TodoViewProps, "onToggle" | "pendingIds" | "rowMessages">;
 
 function errorMessage(error: ClientError | null): string {
   return match(error)
@@ -45,11 +51,39 @@ function EmptyMessage() {
   return <p className="m-0 p-4 text-center text-slate-600">No todos yet.</p>;
 }
 
-function ListOrEmpty({ todos }: { todos: Todo[] }) {
-  return todos.length === 0 ? <EmptyMessage /> : <TodoList todos={todos} />;
+function ListOrEmpty({ todos, ...rowProps }: { todos: Todo[] } & RowProps) {
+  return todos.length === 0 ? <EmptyMessage /> : <TodoList todos={todos} {...rowProps} />;
 }
 
-export function TodoView({ state, todos, error, onRetry }: TodoViewProps) {
+//ListSection is used for the ready, refreshing, and refresh-failure states.
+//The banner (nothing, "Refreshing…", or the error) always sits in the first slot and the list always sits in the second slot.
+// Because the list never changes position in the tree, React keeps the same checkbox elements between those states,
+// so a checkbox that has focus does not lose it when the list is refreshed.
+function ListSection({
+  banner,
+  busy,
+  todos,
+  ...rowProps
+}: { banner: ReactNode; busy: boolean; todos: Todo[] } & RowProps) {
+  return (
+    <section aria-busy={busy ? "true" : undefined}>
+      {banner}
+      <ListOrEmpty todos={todos} {...rowProps} />
+    </section>
+  );
+}
+
+export function TodoView({
+  state,
+  todos,
+  error,
+  onRetry,
+  onToggle,
+  pendingIds,
+  rowMessages,
+}: TodoViewProps) {
+  const rowProps = { onToggle, pendingIds, rowMessages };
+
   return match(state)
     .with("initial-loading", () => (
       <p role="status" className="m-0 p-4 text-center text-slate-600">
@@ -58,20 +92,26 @@ export function TodoView({ state, todos, error, onRetry }: TodoViewProps) {
     ))
     .with("initial-failure", () => <ErrorBanner error={error} onRetry={onRetry} />)
     .with("empty", () => <EmptyMessage />)
-    .with("ready", () => <TodoList todos={todos} />)
+    .with("ready", () => <ListSection banner={null} busy={false} todos={todos} {...rowProps} />)
     .with("refreshing", () => (
-      <section aria-busy="true">
-        <p role="status" className="m-0 p-2 text-center text-sm text-slate-600">
-          Refreshing…
-        </p>
-        <ListOrEmpty todos={todos} />
-      </section>
+      <ListSection
+        banner={
+          <p role="status" className="m-0 p-2 text-center text-sm text-slate-600">
+            Refreshing…
+          </p>
+        }
+        busy
+        todos={todos}
+        {...rowProps}
+      />
     ))
     .with("refresh-failure", () => (
-      <section>
-        <ErrorBanner error={error} onRetry={onRetry} />
-        <ListOrEmpty todos={todos} />
-      </section>
+      <ListSection
+        banner={<ErrorBanner error={error} onRetry={onRetry} />}
+        busy={false}
+        todos={todos}
+        {...rowProps}
+      />
     ))
     .exhaustive();
 }
