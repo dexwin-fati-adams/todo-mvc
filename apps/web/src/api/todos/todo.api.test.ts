@@ -411,6 +411,126 @@ describe("todoApi.update", () => {
   });
 });
 
+describe("todoApi.replace", () => {
+  const body = { title: "Buy oat milk", completed: false };
+  const replacedTodo = { ...todo, title: "Buy oat milk" };
+
+  it("sends PUT /todos/:id with a JSON body and a Content-Type header", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(replacedTodo)));
+
+    await todoApi.replace(todo.id, body);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toMatch(new RegExp(`/todos/${todo.id}$`));
+    expect(init?.method).toBe("PUT");
+    expect(init?.headers).toEqual({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("sends both title and completed in the body", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(replacedTodo)));
+
+    await todoApi.replace(todo.id, { title: "Buy oat milk", completed: true });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ title: "Buy oat milk", completed: true }),
+    );
+  });
+
+  it("encodes the id in the path", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(replacedTodo)));
+
+    await todoApi.replace("a/b c", body);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/todos\/a%2Fb%20c$/);
+  });
+
+  it("returns the parsed todo for a 200 response", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse(replacedTodo)));
+
+    const result = await todoApi.replace(todo.id, body);
+
+    expect(result._unsafeUnwrap()).toEqual(replacedTodo);
+  });
+
+  it("returns PARSE_ERROR when the 200 body fails the todo schema", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ id: "not-a-todo" })));
+
+    const result = await todoApi.replace(todo.id, body);
+
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+  });
+
+  it("returns API_ERROR with status and message for a 400", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "VALIDATION_ERROR", message: "Title cannot be empty" }, 400),
+      ),
+    );
+
+    const result = await todoApi.replace(todo.id, body);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 400,
+      message: "Title cannot be empty",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 404", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "NOT_FOUND", message: "Todo not found" }, 404)),
+    );
+
+    const result = await todoApi.replace(todo.id, body);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 404,
+      message: "Todo not found",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 503", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Try again later" }, 503),
+      ),
+    );
+
+    const result = await todoApi.replace(todo.id, body);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 503,
+      message: "Try again later",
+    });
+  });
+
+  it("returns NETWORK_ERROR when fetch throws", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const result = await todoApi.replace(todo.id, body);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "NETWORK_ERROR",
+      message: "Failed to fetch",
+    });
+  });
+
+  // Extra, not in the plan list: same guard as update, so an invalid body never leaves the adapter.
+  it("makes no request when the body fails the replace schema", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(replacedTodo)));
+
+    const result = await todoApi.replace(todo.id, { title: "", completed: false });
+
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("formatError", () => {
   it("formats each error type", () => {
     expect(formatError({ type: "API_ERROR", status: 503, message: "Down" })).toBe(
