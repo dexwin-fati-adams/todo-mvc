@@ -4,6 +4,7 @@ import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
 import type { ClientError } from "@/api/todos/todo.api";
 import { TodoList } from "@/modules/todos/components/TodoList";
+import type { TodoEditing } from "@/modules/todos/components/TodoItem";
 
 export type TodoViewProps = {
   state: TodoServerState;
@@ -13,9 +14,10 @@ export type TodoViewProps = {
   onToggle: (todo: Todo) => void;
   pendingIds: ReadonlySet<string>;
   rowMessages: Readonly<Record<string, string>>;
+  editing?: TodoEditing;
 };
 
-type RowProps = Pick<TodoViewProps, "onToggle" | "pendingIds" | "rowMessages">;
+type RowProps = Pick<TodoViewProps, "onToggle" | "pendingIds" | "rowMessages" | "editing">;
 
 function errorMessage(error: ClientError | null): string {
   return match(error)
@@ -81,8 +83,9 @@ export function TodoView({
   onToggle,
   pendingIds,
   rowMessages,
+  editing,
 }: TodoViewProps) {
-  const rowProps = { onToggle, pendingIds, rowMessages };
+  const rowProps = { onToggle, pendingIds, rowMessages, editing };
 
   return match(state)
     .with("initial-loading", () => (

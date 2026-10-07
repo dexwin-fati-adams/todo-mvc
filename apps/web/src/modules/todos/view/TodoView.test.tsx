@@ -2,8 +2,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import type { Todo } from "contracts";
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ClientError } from "@/api/todos/todo.api";
+import type { TodoEditing } from "@/modules/todos/components/TodoItem";
 import { TodoView, type TodoViewProps } from "@/modules/todos/view/TodoView";
 
 const active: Todo = {
@@ -41,6 +43,30 @@ function renderView(props: Partial<TodoViewProps> = {}) {
   const utils = render(<TodoView {...viewProps({ onRetry, onToggle, ...props })} />);
   return { ...utils, onRetry, onToggle };
 }
+
+function editingProps(props: Partial<TodoEditing> = {}): TodoEditing {
+  return {
+    activeId: null,
+    draft: "",
+    status: "idle",
+    message: null,
+    inputRef: createRef<HTMLInputElement>(),
+    setEditButton: vi.fn(() => vi.fn()),
+    onStart: vi.fn(),
+    onDraftChange: vi.fn(),
+    onSave: vi.fn(),
+    onCancel: vi.fn(),
+    ...props,
+  };
+}
+
+function renderEditingActive(props: Partial<TodoEditing> = {}) {
+  const editing = editingProps({ activeId: active.id, draft: "Buy milk", ...props });
+  const utils = renderView({ editing });
+  return { ...utils, editing };
+}
+
+const editName = (title: string) => `Edit “${title}”`;
 
 describe("TodoView", () => {
   it("initial-loading shows a status message and no list", () => {
@@ -165,7 +191,201 @@ describe("TodoView completion checkbox", () => {
   });
 });
 
+describe("TodoView inline editing", () => {
+  it("shows no Edit button when the list is not wired for editing", () => {
+    renderView();
+
+    expect(screen.queryByRole("button", { name: /^edit/i })).not.toBeInTheDocument();
+  });
+
+  it("shows an Edit button for each row and starts editing the row it belongs to", async () => {
+    const editing = editingProps();
+    renderView({ editing });
+
+    await userEvent.click(screen.getByRole("button", { name: editName("Buy milk") }));
+
+    expect(screen.getByRole("button", { name: editName("Walk the dog") })).toBeInTheDocument();
+    expect(editing.onStart).toHaveBeenCalledTimes(1);
+    expect(editing.onStart).toHaveBeenCalledWith(active);
+  });
+
+  it("registers each row's Edit button by todo id", () => {
+    const editing = editingProps();
+    renderView({ editing });
+
+    expect(editing.setEditButton).toHaveBeenCalledWith(active.id);
+    expect(editing.setEditButton).toHaveBeenCalledWith(done.id);
+  });
+
+  it("double-clicking a title starts editing without toggling the todo", async () => {
+    const editing = editingProps();
+    const { onToggle } = renderView({ editing });
+
+    await userEvent.dblClick(screen.getByText("Buy milk"));
+
+    expect(editing.onStart).toHaveBeenCalledWith(active);
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("shows the editor only for the row being edited", () => {
+    renderEditingActive();
+
+    expect(screen.getAllByRole("textbox")).toHaveLength(1);
+    const [first, second] = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(within(first!).getByRole("textbox")).toHaveValue("Buy milk");
+    expect(within(second!).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(first!).queryByRole("button", { name: editName("Buy milk") })).toBeNull();
+    expect(within(second!).getByRole("button", { name: editName("Walk the dog") })).toBeVisible();
+  });
+
+  it("labels the field with the original title", () => {
+    renderEditingActive();
+
+    expect(screen.getByRole("textbox", { name: "Edit title of “Buy milk”" })).toBeInTheDocument();
+  });
+
+  it("keeps the row's checkbox named by the title while it is being edited", () => {
+    renderEditingActive();
+
+    expect(screen.getByRole("checkbox", { name: "Buy milk" })).toBeInTheDocument();
+  });
+
+  it("blocks Edit on other rows while one row is being edited", async () => {
+    const { editing } = renderEditingActive();
+    const other = screen.getByRole("button", { name: editName("Walk the dog") });
+
+    expect(other).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(other);
+    await userEvent.dblClick(screen.getByText("Walk the dog"));
+
+    expect(editing.onStart).not.toHaveBeenCalled();
+  });
+
+  it("blocks Edit on a row whose toggle is pending", async () => {
+    const editing = editingProps();
+    renderView({ editing, pendingIds: new Set([active.id]) });
+    const edit = screen.getByRole("button", { name: editName("Buy milk") });
+
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(edit);
+    await userEvent.dblClick(screen.getByText("Buy milk"));
+
+    expect(editing.onStart).not.toHaveBeenCalled();
+  });
+
+  it("blocks the checkbox while its row is being saved", async () => {
+    const { onToggle } = renderEditingActive({ status: "pending" });
+
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+    expect(checkbox).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(checkbox);
+
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("does not block the checkbox of another row while a row is being saved", async () => {
+    const { onToggle } = renderEditingActive({ status: "pending" });
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Walk the dog" }));
+
+    expect(onToggle).toHaveBeenCalledWith(done);
+  });
+
+  it("passes typing, Enter and Escape from the field to the flow", async () => {
+    const { editing } = renderEditingActive();
+    const field = screen.getByRole("textbox");
+
+    await userEvent.type(field, "x");
+    expect(editing.onDraftChange).toHaveBeenLastCalledWith("Buy milkx");
+
+    await userEvent.type(field, "{Enter}");
+    expect(editing.onSave).toHaveBeenCalledTimes(1);
+
+    await userEvent.type(field, "{Escape}");
+    expect(editing.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("the Save and Cancel buttons call their handlers", async () => {
+    const { editing } = renderEditingActive();
+
+    await userEvent.click(screen.getByRole("button", { name: /^save/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^cancel/i }));
+
+    expect(editing.onSave).toHaveBeenCalledTimes(1);
+    expect(editing.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("pending makes the field read-only, blocks the buttons by aria, and shows Saving…", () => {
+    renderEditingActive({ status: "pending" });
+
+    expect(screen.getByRole("textbox")).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Saving…" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getAllByRole("status").some((el) => el.textContent === "Saving…")).toBe(true);
+  });
+
+  it("pending keeps the field and buttons in the tab order", () => {
+    renderEditingActive({ status: "pending" });
+
+    expect(screen.getByRole("textbox")).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Saving…" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).not.toBeDisabled();
+  });
+
+  it("shows a validation message with aria-invalid, linked to the field", () => {
+    renderEditingActive({ status: "invalid", message: "Enter a title." });
+
+    const field = screen.getByRole("textbox");
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field).toHaveAccessibleDescription("Enter a title.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a title.");
+  });
+
+  it("is not marked invalid when idle", () => {
+    renderEditingActive();
+
+    expect(screen.getByRole("textbox")).toHaveAttribute("aria-invalid", "false");
+  });
+
+  it("a failed save uses role=alert and keeps the draft", () => {
+    renderEditingActive({
+      status: "failed",
+      draft: "My draft",
+      message: "Could not save. Try again.",
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not save. Try again.");
+    expect(screen.getByRole("textbox")).toHaveValue("My draft");
+    expect(screen.getByRole("textbox")).toHaveAttribute("aria-invalid", "false");
+  });
+
+  it.each<{ name: string; next: Partial<TodoViewProps> }>([
+    { name: "refreshing", next: { state: "refreshing" } },
+    { name: "refresh-failure", next: { state: "refresh-failure", error: networkError } },
+  ])("keeps the same Edit button and its focus when ready becomes $name", ({ next }) => {
+    const editing = editingProps();
+    const { rerender } = render(<TodoView {...viewProps({ editing })} />);
+    const button = screen.getByRole("button", { name: editName("Buy milk") });
+    button.focus();
+
+    rerender(<TodoView {...viewProps({ editing, ...next })} />);
+
+    const after = screen.getByRole("button", { name: editName("Buy milk") });
+    expect(after).toBe(button);
+    expect(after).toHaveFocus();
+  });
+});
+
 describe("TodoView accessibility", () => {
+  const editingActive = (props: Partial<TodoEditing> = {}) =>
+    editingProps({ activeId: active.id, draft: "Buy milk", ...props });
+
   const cases: { name: string; props: Partial<TodoViewProps> }[] = [
     { name: "initial-loading", props: { state: "initial-loading", todos: [] } },
     {
@@ -180,6 +400,25 @@ describe("TodoView accessibility", () => {
     {
       name: "ready with a row message",
       props: { rowMessages: { [active.id]: "Could not update this todo. Try again." } },
+    },
+    { name: "ready with Edit buttons", props: { editing: editingProps() } },
+    {
+      name: "ready with Edit blocked on one row",
+      props: { editing: editingProps(), pendingIds: new Set([active.id]) },
+    },
+    { name: "editing", props: { editing: editingActive() } },
+    {
+      name: "editing, invalid",
+      props: {
+        editing: editingActive({ draft: "", status: "invalid", message: "Enter a title." }),
+      },
+    },
+    { name: "editing, pending", props: { editing: editingActive({ status: "pending" }) } },
+    {
+      name: "editing, failed",
+      props: {
+        editing: editingActive({ status: "failed", message: "Could not save. Try again." }),
+      },
     },
   ];
 

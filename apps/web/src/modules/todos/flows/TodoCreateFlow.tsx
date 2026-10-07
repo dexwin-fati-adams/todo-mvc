@@ -13,8 +13,8 @@ type FormState = { status: TodoFormStatus; message: string | null };
 
 const IDLE: FormState = { status: "idle", message: null };
 
-//failureOf() turns a ClientError into the state and the plain message the user sees. A 400 is the same expected
-// failure as an empty title. Raw errors, status codes and server messages are never shown.
+//failureOf looks at the type of error that happened and converts it into a form state with the right status and message, 
+// such as “invalid,” “network error,” or a general error..
 function failureOf(error: ClientError): FormState {
   return match(error)
     .with({ type: "API_ERROR", status: 400 }, (): FormState => ({
@@ -32,9 +32,8 @@ function failureOf(error: ClientError): FormState {
     .exhaustive();
 }
 
-//TodoCreateFlow owns the form: it trims and checks the title before any request, blocks a repeated submit while one is
-// pending, clears the field on success, and puts focus back in the field after every outcome.
-//The ref blocks a second submit in the same moment, before React has re-rendered the pending state.
+//TodoCreateFlow manages the Todo creation form by keeping track of the title, input field, and form state. When the user changes the title, it updates the title
+//  and clears any previous error state.
 export function TodoCreateFlow() {
   const { submit } = useCreateTodo();
   const inputRef = useRef<HTMLInputElement>(null);
