@@ -26,7 +26,6 @@ function withoutKey(record: Readonly<Record<string, string>>, key: string) {
   return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
-
 //start marks a Todo as being updated, toggles its completed status, removes the pending state when finished,
 //  and shows an error message if the update fails.
 export function TodoFlows({ status = "all" }: { status?: Status }) {

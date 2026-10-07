@@ -26,7 +26,6 @@ type TodoItemProps = {
   editing?: TodoEditing;
 };
 
-
 //TodoItem displays one Todo and lets the user toggle or edit it, while disabling actions when an update/edit is already happening.
 //  It also shows “Updating…” or an error message when needed.
 export function TodoItem({ todo, onToggle, isPending, message, editing }: TodoItemProps) {

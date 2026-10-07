@@ -13,7 +13,7 @@ type FormState = { status: TodoFormStatus; message: string | null };
 
 const IDLE: FormState = { status: "idle", message: null };
 
-//failureOf looks at the type of error that happened and converts it into a form state with the right status and message, 
+//failureOf looks at the type of error that happened and converts it into a form state with the right status and message,
 // such as “invalid,” “network error,” or a general error..
 function failureOf(error: ClientError): FormState {
   return match(error)

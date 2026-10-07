@@ -15,7 +15,7 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
     },
   );
 
-//useReplaceTodo updates a Todo through the API, refreshes the Todo list when successful, 
+//useReplaceTodo updates a Todo through the API, refreshes the Todo list when successful,
 // and returns either the updated Todo or an error.
 export function useReplaceTodo() {
   const queryClient = useQueryClient();

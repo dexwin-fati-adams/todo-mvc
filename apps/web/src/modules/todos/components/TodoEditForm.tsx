@@ -14,10 +14,10 @@ export type TodoEditFormProps = {
   onCancel: () => void;
 };
 
-//TodoEditForm shows a form for editing a Todo's title, lets the user save or cancel, 
+//TodoEditForm shows a form for editing a Todo's title, lets the user save or cancel,
 // and handles states like invalid input or saving.
 
-//When saving, it disables editing and shows “Saving…”, and if something goes wrong, 
+//When saving, it disables editing and shows “Saving…”, and if something goes wrong,
 // it displays an error message.
 export function TodoEditForm({
   title,

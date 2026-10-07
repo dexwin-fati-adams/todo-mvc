@@ -323,10 +323,7 @@ describe("TodoView inline editing", () => {
       "aria-disabled",
       "true",
     );
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getAllByRole("status").some((el) => el.textContent === "Saving…")).toBe(true);
   });
 
