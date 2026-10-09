@@ -3,10 +3,12 @@ import { err, errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow
 import type { z } from "zod";
 import {
   ErrorResponseSchema,
+  ReplaceTodoRequestSchema,
   TodoListResponseSchema,
   TodoSchema,
   UpdateTodoRequestSchema,
   type CreateTodoRequest,
+  type ReplaceTodoRequest,
   type Status,
 } from "contracts";
 import { config } from "@/config";
@@ -115,6 +117,9 @@ function toQueryString(query: ListQuery): string {
 //update sends only the changed fields to the backend with PATCH /todos/:id and checks that the response is a valid todo.
 // The body is checked with UpdateTodoRequestSchema first, so an invalid body never leaves the adapter.
 // The id is encoded, so it can only ever be one part of the path.
+//replace sends the full todo representation (title and completed) to the backend with PUT /todos/:id and checks that the response is a valid todo.
+// The body is checked with ReplaceTodoRequestSchema first, so an invalid body never leaves the adapter.
+// The adapter does not trim. The flow trims the title before it calls replace.
 export const todoApi = {
   list: (query: ListQuery = {}) => request(`/todos${toQueryString(query)}`, TodoListResponseSchema),
   create: (body: CreateTodoRequest) =>
@@ -124,6 +129,18 @@ export const todoApi = {
     return parsedBody.success
       ? request(`/todos/${encodeURIComponent(id)}`, TodoSchema, {
           method: "PATCH",
+          body: JSON.stringify(parsedBody.data),
+        })
+      : errAsync<z.infer<typeof TodoSchema>, ClientError>({
+          type: "PARSE_ERROR",
+          message: parsedBody.error.message,
+        });
+  },
+  replace: (id: string, body: ReplaceTodoRequest) => {
+    const parsedBody = ReplaceTodoRequestSchema.safeParse(body);
+    return parsedBody.success
+      ? request(`/todos/${encodeURIComponent(id)}`, TodoSchema, {
+          method: "PUT",
           body: JSON.stringify(parsedBody.data),
         })
       : errAsync<z.infer<typeof TodoSchema>, ClientError>({

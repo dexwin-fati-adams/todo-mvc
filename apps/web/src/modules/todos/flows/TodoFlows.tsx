@@ -26,11 +26,8 @@ function withoutKey(record: Readonly<Record<string, string>>, key: string) {
   return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
-//TodoFlows owns the toggle state: which todo ids are pending and the message for each row.
-//The wanted value is worked out from the todo the row shows (completed: !todo.completed) and is sent as an absolute value,
-// so two quick clicks can never flip the todo twice.
-//A ref blocks a repeated change on a pending row straight away, before React has re-rendered.
-//The list is never changed before the API answers. The checkbox only shows what the server last confirmed.
+//start marks a Todo as being updated, toggles its completed status, removes the pending state when finished,
+//  and shows an error message if the update fails.
 export function TodoFlows({ status = "all" }: { status?: Status }) {
   const { serverState, todos, error, refetch } = useTodos(status);
   const { toggle } = useToggleTodo();
