@@ -10,6 +10,8 @@
     "@types/node": "^22.20.1",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.6.0",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.67.0"
@@ -18,6 +20,10 @@
     "typecheck": "tsc --build",
     "lint": "eslint .",
     "format:check": "prettier --check .",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,json,md}": "prettier --write"
   }
 }

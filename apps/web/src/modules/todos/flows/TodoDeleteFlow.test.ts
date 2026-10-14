@@ -1,28 +1,79 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { err, ok } from "neverthrow";
+import { act, renderHook } from "@testing-library/react";
+import { err, ok, type Result } from "neverthrow";
 import type { Todo } from "contracts";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError } from "@/api/todos/todo.api";
 import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 import { useTodoDeleteFlow } from "@/modules/todos/flows/TodoDeleteFlow";
 
 vi.mock("@/modules/todos/hooks/useDeleteTodo");
 
-const todo: Todo = {
+type Outcome = Result<undefined, ClientError>;
+
+const DELETE_FAILED = "Could not delete this todo. Please try again.";
+const ALREADY_DELETED = "That todo was already deleted. The list has been refreshed.";
+
+const first: Todo = {
   id: "11111111-1111-4111-8111-111111111111",
   title: "Buy milk",
   completed: false,
   createdAt: "2026-09-29T10:00:00.000Z",
 };
-
 const second: Todo = {
   id: "22222222-2222-4222-8222-222222222222",
   title: "Walk the dog",
-  completed: false,
+  completed: true,
   createdAt: "2026-09-29T11:00:00.000Z",
 };
+const third: Todo = {
+  id: "33333333-3333-4333-8333-333333333333",
+  title: "Call mum",
+  completed: false,
+  createdAt: "2026-09-29T12:00:00.000Z",
+};
 
-const remove = vi.fn();
+const remove = vi.fn<(id: string) => Promise<Outcome>>();
+
+//Makes the next remove() call wait until release() is called, so a test can look at the pending state.
+function holdNextRemove() {
+  let release!: (outcome: Outcome) => void;
+  remove.mockReturnValueOnce(
+    new Promise<Outcome>((resolve) => {
+      release = resolve;
+    }),
+  );
+  return (outcome: Outcome) => release(outcome);
+}
+
+function setup(todos: Todo[] = [first, second, third]) {
+  const setRowMessage = vi.fn<(id: string, message: string) => void>();
+  const clearRowMessage = vi.fn<(id: string) => void>();
+  const utils = renderHook(
+    ({ list }: { list: Todo[] }) =>
+      useTodoDeleteFlow({ todos: list, setRowMessage, clearRowMessage }),
+    { initialProps: { list: todos } },
+  );
+  return { ...utils, setRowMessage, clearRowMessage };
+}
+
+type Flow = ReturnType<typeof setup>["result"];
+
+//Registers a real button for a todo, the way the row does, so the tests can check where focus goes.
+function mountDeleteButton(result: Flow, todo: Todo) {
+  const button = document.createElement("button");
+  button.textContent = `Delete ${todo.title}`;
+  document.body.append(button);
+  result.current.setDeleteButton(todo.id)(button);
+  return button;
+}
+
+function mountFocusTarget(result: Flow) {
+  const target = document.createElement("div");
+  target.tabIndex = -1;
+  document.body.append(target);
+  result.current.setFocusTarget(target);
+  return target;
+}
 
 beforeEach(() => {
   remove.mockReset();
@@ -30,131 +81,214 @@ beforeEach(() => {
   vi.mocked(useDeleteTodo).mockReturnValue({ remove });
 });
 
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
 describe("useTodoDeleteFlow", () => {
-  it("calls remove once for a delete action and records the pending row", async () => {
-    const setRowMessage = vi.fn();
-    const clearRowMessage = vi.fn();
-    let resolve!: (value: unknown) => void;
-    remove.mockReturnValueOnce(
-      new Promise((res) => {
-        resolve = res;
-      }),
-    );
+  it("calls remove with the todo id", () => {
+    const { result } = setup();
 
-    const { result } = renderHook(() =>
-      useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
-    );
+    act(() => result.current.onDelete(first));
 
-    act(() => {
-      result.current.onDelete(todo);
-    });
-
-    expect(result.current.activeIds.has(todo.id)).toBe(true);
     expect(remove).toHaveBeenCalledTimes(1);
-    expect(remove).toHaveBeenCalledWith(todo.id);
-
-    await act(async () => {
-      resolve(ok(undefined));
-    });
+    expect(remove).toHaveBeenCalledWith(first.id);
   });
 
-  it("ignores a second click while the row is already deleting", async () => {
-    const setRowMessage = vi.fn();
-    const clearRowMessage = vi.fn();
-    const { result } = renderHook(() =>
-      useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
-    );
+  it("marks the row as deleting while the request is pending, and clears it after a failure", async () => {
+    const { result } = setup();
+    const release = holdNextRemove();
 
-    act(() => {
-      result.current.onDelete(todo);
-      result.current.onDelete(todo);
-    });
+    act(() => result.current.onDelete(first));
+    expect(result.current.activeIds.has(first.id)).toBe(true);
 
-    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    await act(async () => release(err({ type: "NETWORK_ERROR", message: "Offline" })));
+    expect(result.current.activeIds.has(first.id)).toBe(false);
   });
 
-  it("moves focus to the next available row after a success", async () => {
-    const setRowMessage = vi.fn();
-    const clearRowMessage = vi.fn();
-    const { result, rerender } = renderHook(
-      ({ todos }) =>
-        useTodoDeleteFlow({
-          todos,
-          setRowMessage,
-          clearRowMessage,
-        }),
-      { initialProps: { todos: [todo, second] as Todo[] } },
-    );
-
-    const firstButton = document.createElement("button");
-    const secondButton = document.createElement("button");
-    const list = document.createElement("div");
-    list.tabIndex = -1;
-    document.body.appendChild(firstButton);
-    document.body.appendChild(secondButton);
-    document.body.appendChild(list);
-
-    result.current.setDeleteButton(todo.id)(firstButton);
-    result.current.setDeleteButton(second.id)(secondButton);
-    result.current.setFocusTarget(list);
+  it("sends no second request for a row that is already being deleted", () => {
+    const { result } = setup();
+    holdNextRemove();
 
     act(() => {
-      result.current.onDelete(todo);
+      result.current.onDelete(first);
+      result.current.onDelete(first);
     });
+    act(() => result.current.onDelete(first));
 
-    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
-    rerender({ todos: [second] });
-    await waitFor(() => expect(result.current.notice).toBe("Deleted “Buy milk”."));
-    expect(document.activeElement).toBe(secondButton);
-
-    document.body.removeChild(firstButton);
-    document.body.removeChild(secondButton);
-    document.body.removeChild(list);
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a safe failure message without leaking raw details", async () => {
-    const setRowMessage = vi.fn();
-    const clearRowMessage = vi.fn();
-    remove.mockResolvedValue(
-      err<ClientError>({ type: "API_ERROR", status: 503, message: "secret" }),
-    );
+  it("still lets another row be deleted while one is pending", () => {
+    const { result } = setup();
+    holdNextRemove();
 
-    const { result } = renderHook(() =>
-      useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
-    );
+    act(() => result.current.onDelete(first));
+    act(() => result.current.onDelete(second));
 
-    act(() => {
-      result.current.onDelete(todo);
-    });
-
-    await waitFor(() =>
-      expect(setRowMessage).toHaveBeenCalledWith(
-        todo.id,
-        "Could not delete this todo. Please try again.",
-      ),
-    );
-    expect(clearRowMessage).toHaveBeenCalledWith(todo.id);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(remove).toHaveBeenLastCalledWith(second.id);
+    expect(result.current.activeIds.has(first.id)).toBe(true);
+    expect(result.current.activeIds.has(second.id)).toBe(true);
   });
 
-  it("shows the already-gone notice for a 404", async () => {
-    const setRowMessage = vi.fn();
-    const clearRowMessage = vi.fn();
-    remove.mockResolvedValue(
-      err<ClientError>({ type: "API_ERROR", status: 404, message: "missing" }),
-    );
+  it("clears the row message and the notice when a delete starts", async () => {
+    const { result, clearRowMessage } = setup();
+    await act(async () => result.current.onDelete(first));
+    expect(result.current.notice).not.toBeNull();
 
-    const { result } = renderHook(() =>
-      useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
-    );
+    act(() => result.current.onDelete(second));
 
-    act(() => {
-      result.current.onDelete(todo);
-    });
+    expect(clearRowMessage).toHaveBeenCalledWith(second.id);
+    expect(result.current.notice).toBeNull();
+  });
+});
 
-    await waitFor(() =>
-      expect(result.current.notice).toBe(
-        "That todo was already deleted. The list has been refreshed.",
-      ),
-    );
+describe("useTodoDeleteFlow success", () => {
+  it("shows a notice that names the deleted todo, and no row message", async () => {
+    const { result, setRowMessage } = setup();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(result.current.notice).toBe("Deleted “Buy milk”.");
+    expect(setRowMessage).not.toHaveBeenCalled();
+  });
+
+  it("stops marking the row as deleting once it is deleted", async () => {
+    const { result } = setup();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(result.current.activeIds.has(first.id)).toBe(false);
+  });
+
+  it("moves focus to the next row's Delete button", async () => {
+    const { result, rerender } = setup([first, second, third]);
+    mountDeleteButton(result, first);
+    const next = mountDeleteButton(result, second);
+    mountDeleteButton(result, third);
+
+    await act(async () => result.current.onDelete(first));
+    rerender({ list: [second, third] });
+
+    expect(next).toHaveFocus();
+  });
+
+  it("moves focus to the previous row's Delete button when the last row is deleted", async () => {
+    const { result, rerender } = setup([first, second, third]);
+    mountDeleteButton(result, first);
+    const previous = mountDeleteButton(result, second);
+    mountDeleteButton(result, third);
+
+    await act(async () => result.current.onDelete(third));
+    rerender({ list: [first, second] });
+
+    expect(previous).toHaveFocus();
+  });
+
+  it("moves focus to the fallback element when the only row is deleted", async () => {
+    const { result, rerender } = setup([first]);
+    mountDeleteButton(result, first);
+    const fallback = mountFocusTarget(result);
+
+    await act(async () => result.current.onDelete(first));
+    rerender({ list: [] });
+
+    expect(fallback).toHaveFocus();
+  });
+
+  it("moves focus to the fallback element when the neighbour's button is not available", async () => {
+    const { result, rerender } = setup([first, second]);
+    mountDeleteButton(result, first);
+    const fallback = mountFocusTarget(result);
+
+    await act(async () => result.current.onDelete(first));
+    rerender({ list: [second] });
+
+    expect(fallback).toHaveFocus();
+  });
+
+  it("does not focus a Delete button that has been removed from the page", async () => {
+    const { result, rerender } = setup([first, second]);
+    mountDeleteButton(result, first);
+    const gone = mountDeleteButton(result, second);
+    result.current.setDeleteButton(second.id)(null);
+    const fallback = mountFocusTarget(result);
+
+    await act(async () => result.current.onDelete(first));
+    rerender({ list: [second] });
+
+    expect(gone).not.toHaveFocus();
+    expect(fallback).toHaveFocus();
+  });
+});
+
+describe("useTodoDeleteFlow missing todo (404)", () => {
+  beforeEach(() => {
+    remove.mockResolvedValue(err({ type: "API_ERROR", status: 404, message: "raw-not-found" }));
+  });
+
+  it("shows the already-deleted notice and no row message", async () => {
+    const { result, setRowMessage } = setup();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(result.current.notice).toBe(ALREADY_DELETED);
+    expect(setRowMessage).not.toHaveBeenCalled();
+    expect(result.current.activeIds.has(first.id)).toBe(false);
+  });
+
+  it("moves focus the same way as after a success", async () => {
+    const { result, rerender } = setup([first, second]);
+    mountDeleteButton(result, first);
+    const next = mountDeleteButton(result, second);
+
+    await act(async () => result.current.onDelete(first));
+    rerender({ list: [second] });
+
+    expect(next).toHaveFocus();
+  });
+});
+
+describe("useTodoDeleteFlow unexpected failures", () => {
+  it.each<{ name: string; error: ClientError }>([
+    { name: "503", error: { type: "API_ERROR", status: 503, message: "secret-internal-detail" } },
+    { name: "network", error: { type: "NETWORK_ERROR", message: "secret-internal-detail" } },
+    { name: "parse", error: { type: "PARSE_ERROR", message: "secret-internal-detail" } },
+    { name: "400", error: { type: "API_ERROR", status: 400, message: "secret-internal-detail" } },
+  ])("shows only the safe row message for a $name failure, and no notice", async ({ error }) => {
+    remove.mockResolvedValue(err(error));
+    const { result, setRowMessage } = setup();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(setRowMessage).toHaveBeenCalledTimes(1);
+    expect(setRowMessage).toHaveBeenCalledWith(first.id, DELETE_FAILED);
+    expect(result.current.notice).toBeNull();
+    expect(result.current.activeIds.has(first.id)).toBe(false);
+  });
+
+  it("does not move focus away from the Delete button", async () => {
+    remove.mockResolvedValue(err({ type: "NETWORK_ERROR", message: "Offline" }));
+    const { result } = setup([first, second]);
+    const button = mountDeleteButton(result, first);
+    const neighbour = mountDeleteButton(result, second);
+    button.focus();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(button).toHaveFocus();
+    expect(neighbour).not.toHaveFocus();
+  });
+
+  it("lets the user try again after a failure", async () => {
+    remove.mockResolvedValueOnce(err({ type: "NETWORK_ERROR", message: "Offline" }));
+    const { result } = setup();
+    await act(async () => result.current.onDelete(first));
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(result.current.notice).toBe("Deleted “Buy milk”.");
   });
 });
