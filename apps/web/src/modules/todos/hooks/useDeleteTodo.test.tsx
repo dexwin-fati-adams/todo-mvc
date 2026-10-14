@@ -12,7 +12,6 @@ vi.mock("@/api/todos/todo.api", async (importOriginal) => ({
     list: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
-    replace: vi.fn(),
     remove: vi.fn(),
   },
 }));
@@ -36,7 +35,7 @@ function createWrapper() {
 }
 
 beforeEach(() => {
-  api.remove.mockReturnValue(okAsync<undefined, ClientError>(undefined));
+  api.remove.mockReturnValue(okAsync(undefined));
 });
 
 afterEach(() => {
@@ -52,10 +51,11 @@ describe("useDeleteTodo", () => {
       await result.current.remove(id);
     });
 
+    expect(api.remove).toHaveBeenCalledTimes(1);
     expect(api.remove).toHaveBeenCalledWith(id);
   });
 
-  it("resolves with ok and no value on success", async () => {
+  it("resolves with an ok result that has no value", async () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDeleteTodo(), { wrapper });
 
@@ -80,7 +80,7 @@ describe("useDeleteTodo", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["todos"] });
   });
 
-  it("resolves only after the list refetch has finished", async () => {
+  it("resolves only after the list refetch has finished, so the row stays pending until it is gone", async () => {
     const { queryClient, wrapper } = createWrapper();
     let finishRefetch!: () => void;
     const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockReturnValue(
@@ -90,27 +90,28 @@ describe("useDeleteTodo", () => {
     );
     const { result } = renderHook(() => useDeleteTodo(), { wrapper });
 
-    let resolved = false;
-    let removing!: Promise<unknown>;
-    act(() => {
-      removing = result.current.remove(id).then(() => {
-        resolved = true;
+    let settled = false;
+    let pending!: Promise<Result<undefined, ClientError>>;
+    await act(async () => {
+      pending = result.current.remove(id).then((outcome) => {
+        settled = true;
+        return outcome;
       });
     });
 
-    await waitFor(() => expect(invalidate).toHaveBeenCalled());
-    expect(resolved).toBe(false);
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["todos"] }));
+    expect(settled).toBe(false);
 
-    finishRefetch();
     await act(async () => {
-      await removing;
+      finishRefetch();
+      await pending;
     });
 
-    expect(resolved).toBe(true);
+    expect(settled).toBe(true);
   });
 
-  it("also invalidates the list when the todo no longer exists (404), and resolves with the typed error", async () => {
-    api.remove.mockReturnValue(errAsync<undefined, ClientError>(notFound));
+  it("also invalidates the todos list query when the todo is already gone (404), and resolves with the typed error", async () => {
+    api.remove.mockReturnValue(errAsync(notFound));
     const { queryClient, wrapper } = createWrapper();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useDeleteTodo(), { wrapper });
@@ -125,7 +126,7 @@ describe("useDeleteTodo", () => {
   });
 
   it("does not invalidate the list on a 503, and resolves with the typed error", async () => {
-    api.remove.mockReturnValue(errAsync<undefined, ClientError>(unavailable));
+    api.remove.mockReturnValue(errAsync(unavailable));
     const { queryClient, wrapper } = createWrapper();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useDeleteTodo(), { wrapper });
@@ -140,7 +141,7 @@ describe("useDeleteTodo", () => {
   });
 
   it("does not invalidate the list on a network error, and resolves with the typed error", async () => {
-    api.remove.mockReturnValue(errAsync<undefined, ClientError>(offline));
+    api.remove.mockReturnValue(errAsync(offline));
     const { queryClient, wrapper } = createWrapper();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useDeleteTodo(), { wrapper });
@@ -155,7 +156,7 @@ describe("useDeleteTodo", () => {
   });
 
   it("never throws, so a failed delete does not reject the returned promise", async () => {
-    api.remove.mockReturnValue(errAsync<undefined, ClientError>(unavailable));
+    api.remove.mockReturnValue(errAsync(unavailable));
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDeleteTodo(), { wrapper });
 

@@ -17,7 +17,7 @@ export type TodoEditing = {
   onSave: () => void;
   onCancel: () => void;
 };
-//This code defines the information and functions needed to manage deleting todos, including tracking which todos are being deleted, showing messages, 
+//This code defines the information and functions needed to manage deleting todos, including tracking which todos are being deleted, showing messages,
 // setting button focus, and handling the delete action.
 export type TodoDeleting = {
   activeIds: ReadonlySet<string>;
@@ -39,7 +39,7 @@ type TodoItemProps = {
 //This code defines the information and functions needed to manage deleting todos, including tracking which todos are being deleted, showing messages,
 //  setting button focus, and handling the delete action.
 export function TodoItem({ todo, onToggle, isPending, message, editing, deleting }: TodoItemProps) {
-  const titleId = `todo-title-${todo.id}`
+  const titleId = `todo-title-${todo.id}`;
   const editingThisRow = editing !== undefined && editing.activeId === todo.id ? editing : null;
   const isSavingThisRow = editingThisRow !== null && editingThisRow.status === "pending";
   const isOtherRowEditing =
