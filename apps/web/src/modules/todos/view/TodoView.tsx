@@ -109,6 +109,10 @@ export function TodoView({
   deleting,
 }: TodoViewProps) {
   const rowProps = { onToggle, pendingIds, rowMessages, editing, deleting };
+  //This code gets the deletion message if one exists;
+  // otherwise, it sets notice to null (nothing to show).
+  //The notice displays a message to the user about the todo deletion,
+  //  such as whether the deletion was successful or failed.
   const notice = deleting?.notice ?? null;
 
   const content = match(state)
