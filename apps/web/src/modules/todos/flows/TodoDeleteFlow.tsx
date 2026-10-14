@@ -9,6 +9,7 @@ import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 const FAILED_MESSAGE = "Could not delete this todo. Please try again.";
 const ALREADY_DELETED_NOTICE = "That todo was already deleted. The list has been refreshed.";
 
+//Only these safe texts are ever shown. Raw errors, status codes, and server messages never reach the user.
 type DeleteOutcome =
   { kind: "deleted" } | { kind: "already-gone" } | { kind: "failed"; message: string };
 
@@ -32,6 +33,10 @@ type UseTodoDeleteFlowParams = {
   clearRowMessage: (id: string) => void;
 };
 
+//useTodoDeleteFlow owns the deleting ids, the list notice, and focus after a removal.
+//It blocks a repeated delete with a ref (state is too slow for a double click in the same tick),
+// works out the neighbour row before the request, and moves focus once the list no longer has the todo.
+//The row messages stay owned by TodoFlows. Blocking by toggle or edit is done in TodoItem.
 export function useTodoDeleteFlow({
   todos,
   setRowMessage,
@@ -59,6 +64,8 @@ export function useTodoDeleteFlow({
     buttonsRef.current.set(id, element);
   };
 
+  //Runs after every render that changes the list or the deleting ids.
+  //Focus moves only once the deleted todo is really gone, because before that its Delete button still exists.
   useEffect(() => {
     const finished = [...focusPlansRef.current.entries()].filter(
       ([deletedId]) => !todos.some((todo) => todo.id === deletedId),
