@@ -407,10 +407,10 @@ describe("update", () => {
 
 describe("delete", () => {
   it("deletes a todo and returns void", async () => {
+    const returning = vi.fn().mockResolvedValue([{ id: "1" }]);
+    const where = vi.fn().mockReturnValue({ returning });
     const db = {
-      delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(undefined),
-      }),
+      delete: vi.fn().mockReturnValue({ where }),
     } as unknown as Db;
 
     const repo = createTodoRepository(db);
@@ -418,13 +418,28 @@ describe("delete", () => {
 
     expect(result.isOk()).toBe(true);
     expect(result._unsafeUnwrap()).toBeUndefined();
+    expect(where).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns TODO_NOT_FOUND when no row was deleted", async () => {
+    const returning = vi.fn().mockResolvedValue([]);
+    const where = vi.fn().mockReturnValue({ returning });
+    const db = {
+      delete: vi.fn().mockReturnValue({ where }),
+    } as unknown as Db;
+
+    const repo = createTodoRepository(db);
+    const result = await repo.delete("99");
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_NOT_FOUND");
   });
 
   it("returns TODO_DB_ERROR when delete throws", async () => {
+    const returning = vi.fn().mockRejectedValue(new Error("delete failed"));
+    const where = vi.fn().mockReturnValue({ returning });
     const db = {
-      delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockRejectedValue(new Error("delete failed")),
-      }),
+      delete: vi.fn().mockReturnValue({ where }),
     } as unknown as Db;
 
     const repo = createTodoRepository(db);
