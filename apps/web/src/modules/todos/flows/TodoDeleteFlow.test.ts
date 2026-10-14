@@ -115,24 +115,9 @@ describe("useTodoDeleteFlow", () => {
   it("shows a safe failure message without leaking raw details", async () => {
     const setRowMessage = vi.fn();
     const clearRowMessage = vi.fn();
-    remove.mockResolvedValue(err<ClientError>({ type: "API_ERROR", status: 503, message: "secret" }));
-
-    const { result } = renderHook(() =>
-      useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
+    remove.mockResolvedValue(
+      err<ClientError>({ type: "API_ERROR", status: 503, message: "secret" }),
     );
-
-    act(() => {
-      result.current.onDelete(todo);
-    });
-
-    await waitFor(() => expect(setRowMessage).toHaveBeenCalledWith(todo.id, "Could not delete this todo. Please try again."));
-    expect(clearRowMessage).toHaveBeenCalledWith(todo.id);
-  });
-
-  it("shows the already-gone notice for a 404", async () => {
-    const setRowMessage = vi.fn();
-    const clearRowMessage = vi.fn();
-    remove.mockResolvedValue(err<ClientError>({ type: "API_ERROR", status: 404, message: "missing" }));
 
     const { result } = renderHook(() =>
       useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
@@ -143,7 +128,33 @@ describe("useTodoDeleteFlow", () => {
     });
 
     await waitFor(() =>
-      expect(result.current.notice).toBe("That todo was already deleted. The list has been refreshed."),
+      expect(setRowMessage).toHaveBeenCalledWith(
+        todo.id,
+        "Could not delete this todo. Please try again.",
+      ),
+    );
+    expect(clearRowMessage).toHaveBeenCalledWith(todo.id);
+  });
+
+  it("shows the already-gone notice for a 404", async () => {
+    const setRowMessage = vi.fn();
+    const clearRowMessage = vi.fn();
+    remove.mockResolvedValue(
+      err<ClientError>({ type: "API_ERROR", status: 404, message: "missing" }),
+    );
+
+    const { result } = renderHook(() =>
+      useTodoDeleteFlow({ todos: [todo], setRowMessage, clearRowMessage }),
+    );
+
+    act(() => {
+      result.current.onDelete(todo);
+    });
+
+    await waitFor(() =>
+      expect(result.current.notice).toBe(
+        "That todo was already deleted. The list has been refreshed.",
+      ),
     );
   });
 });
