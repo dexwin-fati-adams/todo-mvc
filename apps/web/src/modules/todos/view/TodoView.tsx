@@ -4,7 +4,7 @@ import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
 import type { ClientError } from "@/api/todos/todo.api";
 import { TodoList } from "@/modules/todos/components/TodoList";
-import type { TodoEditing } from "@/modules/todos/components/TodoItem";
+import type { TodoDeleting, TodoEditing } from "@/modules/todos/components/TodoItem";
 
 export type TodoViewProps = {
   state: TodoServerState;
@@ -15,9 +15,13 @@ export type TodoViewProps = {
   pendingIds: ReadonlySet<string>;
   rowMessages: Readonly<Record<string, string>>;
   editing?: TodoEditing;
+  deleting?: TodoDeleting;
 };
 
-type RowProps = Pick<TodoViewProps, "onToggle" | "pendingIds" | "rowMessages" | "editing">;
+type RowProps = Pick<
+  TodoViewProps,
+  "onToggle" | "pendingIds" | "rowMessages" | "editing" | "deleting"
+>;
 
 function errorMessage(error: ClientError | null): string {
   return match(error)
@@ -49,12 +53,30 @@ function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: (
   );
 }
 
-function EmptyMessage() {
-  return <p className="m-0 p-4 text-center text-slate-600">No todos yet.</p>;
+//The empty message can take focus (tabIndex -1) when the list is wired for deleting. After the last todo is deleted
+// there is no row left, so focus goes here.
+function EmptyMessage({
+  setFocusTarget,
+}: {
+  setFocusTarget: ((element: HTMLElement | null) => void) | undefined;
+}) {
+  return (
+    <p
+      ref={setFocusTarget}
+      tabIndex={setFocusTarget !== undefined ? -1 : undefined}
+      className="m-0 p-4 text-center text-slate-600"
+    >
+      No todos yet.
+    </p>
+  );
 }
 
 function ListOrEmpty({ todos, ...rowProps }: { todos: Todo[] } & RowProps) {
-  return todos.length === 0 ? <EmptyMessage /> : <TodoList todos={todos} {...rowProps} />;
+  return todos.length === 0 ? (
+    <EmptyMessage setFocusTarget={rowProps.deleting?.setFocusTarget} />
+  ) : (
+    <TodoList todos={todos} {...rowProps} />
+  );
 }
 
 //ListSection is used for the ready, refreshing, and refresh-failure states.
@@ -75,6 +97,8 @@ function ListSection({
   );
 }
 
+//The delete notice ("Deleted …" or "already deleted") is shown above everything else, outside the state switch.
+// It is not inside ListSection, so it shows in the empty state too, and when it appears it does not move the list.
 export function TodoView({
   state,
   todos,
@@ -84,17 +108,19 @@ export function TodoView({
   pendingIds,
   rowMessages,
   editing,
+  deleting,
 }: TodoViewProps) {
-  const rowProps = { onToggle, pendingIds, rowMessages, editing };
+  const rowProps = { onToggle, pendingIds, rowMessages, editing, deleting };
+  const notice = deleting?.notice ?? null;
 
-  return match(state)
+  const content = match(state)
     .with("initial-loading", () => (
       <p role="status" className="m-0 p-4 text-center text-slate-600">
         Loading todos…
       </p>
     ))
     .with("initial-failure", () => <ErrorBanner error={error} onRetry={onRetry} />)
-    .with("empty", () => <EmptyMessage />)
+    .with("empty", () => <EmptyMessage setFocusTarget={deleting?.setFocusTarget} />)
     .with("ready", () => <ListSection banner={null} busy={false} todos={todos} {...rowProps} />)
     .with("refreshing", () => (
       <ListSection
@@ -117,4 +143,15 @@ export function TodoView({
       />
     ))
     .exhaustive();
+
+  return (
+    <>
+      {notice !== null ? (
+        <p role="status" className="m-0 p-2 text-center text-sm text-slate-600">
+          {notice}
+        </p>
+      ) : null}
+      {content}
+    </>
+  );
 }

@@ -5,7 +5,7 @@ import type { Todo } from "contracts";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ClientError } from "@/api/todos/todo.api";
-import type { TodoEditing } from "@/modules/todos/components/TodoItem";
+import type { TodoDeleting, TodoEditing } from "@/modules/todos/components/TodoItem";
 import { TodoView, type TodoViewProps } from "@/modules/todos/view/TodoView";
 
 const active: Todo = {
@@ -60,6 +60,17 @@ function editingProps(props: Partial<TodoEditing> = {}): TodoEditing {
   };
 }
 
+function deletingProps(props: Partial<TodoDeleting> = {}): TodoDeleting {
+  return {
+    activeIds: new Set(),
+    notice: null,
+    setDeleteButton: vi.fn(() => vi.fn()),
+    setFocusTarget: vi.fn(),
+    onDelete: vi.fn(),
+    ...props,
+  };
+}
+
 function renderEditingActive(props: Partial<TodoEditing> = {}) {
   const editing = editingProps({ activeId: active.id, draft: "Buy milk", ...props });
   const utils = renderView({ editing });
@@ -67,6 +78,7 @@ function renderEditingActive(props: Partial<TodoEditing> = {}) {
 }
 
 const editName = (title: string) => `Edit “${title}”`;
+const deleteName = (title: string) => `Delete “${title}”`;
 
 describe("TodoView", () => {
   it("initial-loading shows a status message and no list", () => {
@@ -379,6 +391,229 @@ describe("TodoView inline editing", () => {
   });
 });
 
+describe("TodoView deleting", () => {
+  it("shows no Delete button when the list is not wired for deleting", () => {
+    renderView();
+
+    expect(screen.queryByRole("button", { name: /^delete/i })).not.toBeInTheDocument();
+  });
+
+  it("shows a labelled Delete button on each row and deletes the row it belongs to", async () => {
+    const deleting = deletingProps();
+    renderView({ deleting });
+
+    await userEvent.click(screen.getByRole("button", { name: deleteName("Buy milk") }));
+
+    expect(screen.getByRole("button", { name: deleteName("Walk the dog") })).toBeInTheDocument();
+    expect(deleting.onDelete).toHaveBeenCalledTimes(1);
+    expect(deleting.onDelete).toHaveBeenCalledWith(active);
+  });
+
+  it("registers each row's Delete button by todo id", () => {
+    const deleting = deletingProps();
+    renderView({ deleting });
+
+    expect(deleting.setDeleteButton).toHaveBeenCalledWith(active.id);
+    expect(deleting.setDeleteButton).toHaveBeenCalledWith(done.id);
+  });
+
+  it("can be used with the keyboard: Enter and Space on the focused button delete", async () => {
+    const deleting = deletingProps();
+    renderView({ deleting });
+    const button = screen.getByRole("button", { name: deleteName("Buy milk") });
+
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+
+    expect(deleting.onDelete).toHaveBeenCalledTimes(2);
+    expect(deleting.onDelete).toHaveBeenCalledWith(active);
+  });
+
+  it("a deleting row shows Deleting…, keeps its name, and blocks the button by aria", async () => {
+    const deleting = deletingProps({ activeIds: new Set([active.id]) });
+    renderView({ deleting });
+    const button = screen.getByRole("button", { name: deleteName("Buy milk") });
+
+    expect(button).toHaveTextContent("Deleting…");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Deleting…");
+
+    await userEvent.click(button);
+    expect(deleting.onDelete).not.toHaveBeenCalled();
+  });
+
+  it("only the deleting row is blocked, and other rows can still be deleted", async () => {
+    const deleting = deletingProps({ activeIds: new Set([active.id]) });
+    renderView({ deleting });
+
+    const other = screen.getByRole("button", { name: deleteName("Walk the dog") });
+    expect(other).toHaveAttribute("aria-disabled", "false");
+    expect(other).toHaveTextContent("Delete");
+
+    await userEvent.click(other);
+
+    expect(deleting.onDelete).toHaveBeenCalledTimes(1);
+    expect(deleting.onDelete).toHaveBeenCalledWith(done);
+  });
+
+  it("blocks the checkbox and Edit on the row that is being deleted", async () => {
+    const editing = editingProps();
+    const deleting = deletingProps({ activeIds: new Set([active.id]) });
+    const { onToggle } = renderView({ editing, deleting });
+
+    const checkbox = screen.getByRole("checkbox", { name: "Buy milk" });
+    const edit = screen.getByRole("button", { name: editName("Buy milk") });
+    expect(checkbox).toHaveAttribute("aria-disabled", "true");
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+
+    await userEvent.click(checkbox);
+    await userEvent.click(edit);
+    await userEvent.dblClick(screen.getByText("Buy milk"));
+
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(editing.onStart).not.toHaveBeenCalled();
+  });
+
+  it("blocks Delete on a row whose toggle is pending", async () => {
+    const deleting = deletingProps();
+    renderView({ deleting, pendingIds: new Set([active.id]) });
+    const button = screen.getByRole("button", { name: deleteName("Buy milk") });
+
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(button);
+
+    expect(deleting.onDelete).not.toHaveBeenCalled();
+  });
+
+  it("blocks Delete on every row while one row is open in the editor", async () => {
+    const deleting = deletingProps();
+    renderView({
+      deleting,
+      editing: editingProps({ activeId: done.id, draft: "Walk the dog" }),
+    });
+    const button = screen.getByRole("button", { name: deleteName("Buy milk") });
+
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(button);
+
+    expect(deleting.onDelete).not.toHaveBeenCalled();
+  });
+
+  it("does not show a Delete button on the row that is open in the editor", () => {
+    renderView({
+      deleting: deletingProps(),
+      editing: editingProps({ activeId: done.id, draft: "Walk the dog" }),
+    });
+
+    expect(screen.queryByRole("button", { name: deleteName("Walk the dog") })).toBeNull();
+    expect(screen.getByRole("button", { name: deleteName("Buy milk") })).toBeInTheDocument();
+  });
+
+  it("shows a row message with role=alert on the row it belongs to", () => {
+    renderView({
+      deleting: deletingProps(),
+      rowMessages: { [active.id]: "Could not delete this todo. Please try again." },
+    });
+
+    const [first, second] = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(within(first!).getByRole("alert")).toHaveTextContent(
+      "Could not delete this todo. Please try again.",
+    );
+    expect(within(second!).queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the list notice as a status message", () => {
+    renderView({ deleting: deletingProps({ notice: "Deleted “Buy milk”." }) });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Deleted “Buy milk”.");
+  });
+
+  it("shows no status message when there is no notice", () => {
+    renderView({ deleting: deletingProps() });
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows the notice in the empty state too", () => {
+    renderView({
+      state: "empty",
+      todos: [],
+      deleting: deletingProps({ notice: "Deleted “Buy milk”." }),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Deleted “Buy milk”.");
+    expect(screen.getByText(/no todos yet/i)).toBeInTheDocument();
+  });
+
+  it("makes the list a focus fallback when wired, and not when it is not wired", () => {
+    const deleting = deletingProps();
+    const { unmount } = renderView({ deleting });
+
+    expect(screen.getByRole("list")).toHaveAttribute("tabindex", "-1");
+    expect(deleting.setFocusTarget).toHaveBeenCalledWith(screen.getByRole("list"));
+
+    unmount();
+    renderView();
+    expect(screen.getByRole("list")).not.toHaveAttribute("tabindex");
+  });
+
+  it("makes the empty message a focus fallback when wired", () => {
+    const deleting = deletingProps();
+    renderView({ state: "empty", todos: [], deleting });
+
+    const message = screen.getByText(/no todos yet/i);
+    expect(message).toHaveAttribute("tabindex", "-1");
+    expect(deleting.setFocusTarget).toHaveBeenCalledWith(message);
+  });
+
+  it("makes the empty message the fallback when a ready list has no rows left", () => {
+    const deleting = deletingProps();
+    renderView({ state: "ready", todos: [], deleting });
+
+    const message = screen.getByText(/no todos yet/i);
+    expect(message).toHaveAttribute("tabindex", "-1");
+    expect(deleting.setFocusTarget).toHaveBeenCalledWith(message);
+  });
+
+  it("the empty message is not focusable when the list is not wired for deleting", () => {
+    renderView({ state: "empty", todos: [] });
+
+    expect(screen.getByText(/no todos yet/i)).not.toHaveAttribute("tabindex");
+  });
+
+  it.each<{ name: string; next: Partial<TodoViewProps> }>([
+    { name: "refreshing", next: { state: "refreshing" } },
+    { name: "refresh-failure", next: { state: "refresh-failure", error: networkError } },
+  ])("keeps the same Delete button and its focus when ready becomes $name", ({ next }) => {
+    const deleting = deletingProps();
+    const { rerender } = render(<TodoView {...viewProps({ deleting })} />);
+    const button = screen.getByRole("button", { name: deleteName("Buy milk") });
+    button.focus();
+
+    rerender(<TodoView {...viewProps({ deleting, ...next })} />);
+
+    const after = screen.getByRole("button", { name: deleteName("Buy milk") });
+    expect(after).toBe(button);
+    expect(after).toHaveFocus();
+  });
+
+  it("keeps the same Delete button and its focus when a notice appears", () => {
+    const { rerender } = render(<TodoView {...viewProps({ deleting: deletingProps() })} />);
+    const button = screen.getByRole("button", { name: deleteName("Walk the dog") });
+    button.focus();
+
+    rerender(
+      <TodoView {...viewProps({ deleting: deletingProps({ notice: "Deleted “Buy milk”." }) })} />,
+    );
+
+    const after = screen.getByRole("button", { name: deleteName("Walk the dog") });
+    expect(after).toBe(button);
+    expect(after).toHaveFocus();
+  });
+});
+
 describe("TodoView accessibility", () => {
   const editingActive = (props: Partial<TodoEditing> = {}) =>
     editingProps({ activeId: active.id, draft: "Buy milk", ...props });
@@ -415,6 +650,44 @@ describe("TodoView accessibility", () => {
       name: "editing, failed",
       props: {
         editing: editingActive({ status: "failed", message: "Could not save. Try again." }),
+      },
+    },
+    { name: "ready with Delete buttons", props: { deleting: deletingProps() } },
+    {
+      name: "ready with Edit and Delete buttons",
+      props: { editing: editingProps(), deleting: deletingProps() },
+    },
+    {
+      name: "deleting a row",
+      props: {
+        editing: editingProps(),
+        deleting: deletingProps({ activeIds: new Set([active.id]) }),
+      },
+    },
+    {
+      name: "Delete blocked while another row is being edited",
+      props: {
+        editing: editingProps({ activeId: done.id, draft: "Walk the dog" }),
+        deleting: deletingProps(),
+      },
+    },
+    {
+      name: "delete failure message on a row",
+      props: {
+        deleting: deletingProps(),
+        rowMessages: { [active.id]: "Could not delete this todo. Please try again." },
+      },
+    },
+    {
+      name: "ready with a delete notice",
+      props: { deleting: deletingProps({ notice: "Deleted “Buy milk”." }) },
+    },
+    {
+      name: "empty with a delete notice",
+      props: {
+        state: "empty",
+        todos: [],
+        deleting: deletingProps({ notice: "That todo was already deleted." }),
       },
     },
   ];
