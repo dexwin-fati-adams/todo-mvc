@@ -18,6 +18,8 @@ export type TodoViewProps = {
   deleting?: TodoDeleting;
 };
 
+//RowProps selects the properties needed from TodoViewProps, while errorMessage()
+//  checks the type of error and returns a simple message telling the user what went wrong.
 type RowProps = Pick<
   TodoViewProps,
   "onToggle" | "pendingIds" | "rowMessages" | "editing" | "deleting"
@@ -53,8 +55,8 @@ function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: (
   );
 }
 
-//The empty message can take focus (tabIndex -1) when the list is wired for deleting. After the last todo is deleted
-// there is no row left, so focus goes here.
+// This is basically for an empty todo
+
 function EmptyMessage({
   setFocusTarget,
 }: {
@@ -70,7 +72,7 @@ function EmptyMessage({
     </p>
   );
 }
-
+//ListOrEmpty shows “No todos yet” if the list is empty, otherwise it displays the todo list.
 function ListOrEmpty({ todos, ...rowProps }: { todos: Todo[] } & RowProps) {
   return todos.length === 0 ? (
     <EmptyMessage setFocusTarget={rowProps.deleting?.setFocusTarget} />
@@ -79,10 +81,6 @@ function ListOrEmpty({ todos, ...rowProps }: { todos: Todo[] } & RowProps) {
   );
 }
 
-//ListSection is used for the ready, refreshing, and refresh-failure states.
-//The banner (nothing, "Refreshing…", or the error) always sits in the first slot and the list always sits in the second slot.
-// Because the list never changes position in the tree, React keeps the same checkbox elements between those states,
-// so a checkbox that has focus does not lose it when the list is refreshed.
 function ListSection({
   banner,
   busy,

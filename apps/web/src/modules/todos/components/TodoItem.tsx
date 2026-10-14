@@ -3,8 +3,6 @@ import { match } from "ts-pattern";
 import type { Todo } from "contracts";
 import { TodoEditForm, type TodoEditStatus } from "@/modules/todos/components/TodoEditForm";
 
-//TodoEditing is everything a row needs to support inline editing. It is optional, so a list that is not wired for
-// editing still renders exactly as before, with no Edit button.
 export type TodoEditing = {
   activeId: string | null;
   draft: string;
@@ -17,8 +15,7 @@ export type TodoEditing = {
   onSave: () => void;
   onCancel: () => void;
 };
-//This code defines the information and functions needed to manage deleting todos, including tracking which todos are being deleted, showing messages,
-// setting button focus, and handling the delete action.
+
 export type TodoDeleting = {
   activeIds: ReadonlySet<string>;
   notice: string | null;
@@ -36,8 +33,6 @@ type TodoItemProps = {
   deleting?: TodoDeleting;
 };
 
-//This code defines the information and functions needed to manage deleting todos, including tracking which todos are being deleted, showing messages,
-//  setting button focus, and handling the delete action.
 export function TodoItem({ todo, onToggle, isPending, message, editing, deleting }: TodoItemProps) {
   const titleId = `todo-title-${todo.id}`;
   const editingThisRow = editing !== undefined && editing.activeId === todo.id ? editing : null;

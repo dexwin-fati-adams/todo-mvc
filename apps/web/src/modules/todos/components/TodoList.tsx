@@ -10,8 +10,6 @@ type TodoListProps = {
   deleting?: TodoDeleting;
 };
 
-//When the list is wired for deleting, the list itself can take focus (tabIndex -1, so it is not in the tab order).
-// The flow uses it as the fallback when the neighbour row it wanted to focus is gone.
 export function TodoList({
   todos,
   onToggle,

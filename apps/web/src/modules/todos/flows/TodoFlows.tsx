@@ -9,7 +9,8 @@ import { TodoView } from "@/modules/todos/view/TodoView";
 const STALE_MESSAGE = "This todo no longer exists. The list has been refreshed.";
 const FAILED_MESSAGE = "Could not update this todo. Please try again.";
 
-//Only these two safe messages are ever shown. Raw errors, status codes, and server messages never reach the user.
+//A stale message means the todo you are trying to change is no longer available or has already been changed
+// or deleted, so the information you have may be outdated.
 function toRowMessage(error: ClientError): string {
   return match(error)
     .with({ type: "API_ERROR", status: 404 }, () => STALE_MESSAGE)
@@ -21,13 +22,12 @@ function toRowMessage(error: ClientError): string {
     )
     .exhaustive();
 }
-
+//This function creates a new object by copying everything
+// from the original object except the key you want to remove.
 function withoutKey(record: Readonly<Record<string, string>>, key: string) {
   return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
-//start marks a Todo as being updated, toggles its completed status, removes the pending state when finished,
-//  and shows an error message if the update fails.
 export function TodoFlows({ status = "all" }: { status?: Status }) {
   const { serverState, todos, error, refetch } = useTodos(status);
   const { toggle } = useToggleTodo();

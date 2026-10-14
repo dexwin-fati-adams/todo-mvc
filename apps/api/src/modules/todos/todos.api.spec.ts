@@ -929,7 +929,9 @@ test.describe("Delete todo button (browser)", () => {
     const button = deleteButton(page, "Buy milk");
     await button.click();
 
-    await expect(page.getByRole("alert")).toHaveText("Could not delete this todo. Please try again.");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Could not delete this todo. Please try again.",
+    );
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toBeVisible();
     await expect(button).toBeFocused();
     await expect(button).not.toHaveAttribute("aria-disabled", "true");
