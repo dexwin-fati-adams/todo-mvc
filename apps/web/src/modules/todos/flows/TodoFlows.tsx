@@ -4,12 +4,14 @@ import type { Status, Todo } from "contracts";
 import type { ClientError } from "@/api/todos/todo.api";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
+import { useTodoDeleteFlow } from "@/modules/todos/flows/TodoDeleteFlow";
 import { TodoView } from "@/modules/todos/view/TodoView";
 
 const STALE_MESSAGE = "This todo no longer exists. The list has been refreshed.";
 const FAILED_MESSAGE = "Could not update this todo. Please try again.";
 
-//Only these two safe messages are ever shown. Raw errors, status codes, and server messages never reach the user.
+//A stale message means the todo you are trying to change is no longer available or has already been changed
+// or deleted, so the information you have may be outdated.
 function toRowMessage(error: ClientError): string {
   return match(error)
     .with({ type: "API_ERROR", status: 404 }, () => STALE_MESSAGE)
@@ -21,13 +23,12 @@ function toRowMessage(error: ClientError): string {
     )
     .exhaustive();
 }
-
+//This function creates a new object by copying everything
+// from the original object except the key you want to remove.
 function withoutKey(record: Readonly<Record<string, string>>, key: string) {
   return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
-//start marks a Todo as being updated, toggles its completed status, removes the pending state when finished,
-//  and shows an error message if the update fails.
 export function TodoFlows({ status = "all" }: { status?: Status }) {
   const { serverState, todos, error, refetch } = useTodos(status);
   const { toggle } = useToggleTodo();
@@ -35,18 +36,31 @@ export function TodoFlows({ status = "all" }: { status?: Status }) {
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set());
   const [rowMessages, setRowMessages] = useState<Readonly<Record<string, string>>>({});
 
+  const clearRowMessage = (id: string) => {
+    setRowMessages((previous) => withoutKey(previous, id));
+  };
+
+  const setRowMessage = (id: string, message: string) => {
+    setRowMessages((previous) => ({ ...previous, [id]: message }));
+  };
+
+  const deleting = useTodoDeleteFlow({
+    todos,
+    setRowMessage,
+    clearRowMessage,
+  });
+
   const start = (todo: Todo) => {
     pendingRef.current.add(todo.id);
     setPendingIds(new Set(pendingRef.current));
-    setRowMessages((previous) => withoutKey(previous, todo.id));
+    clearRowMessage(todo.id);
 
     void toggle(todo.id, { completed: !todo.completed }).then((result) => {
       pendingRef.current.delete(todo.id);
       setPendingIds(new Set(pendingRef.current));
       result.match(
         () => undefined,
-        (failure) =>
-          setRowMessages((previous) => ({ ...previous, [todo.id]: toRowMessage(failure) })),
+        (failure) => setRowMessage(todo.id, toRowMessage(failure)),
       );
     });
   };
@@ -67,6 +81,7 @@ export function TodoFlows({ status = "all" }: { status?: Status }) {
       onToggle={onToggle}
       pendingIds={pendingIds}
       rowMessages={rowMessages}
+      deleting={deleting}
     />
   );
 }

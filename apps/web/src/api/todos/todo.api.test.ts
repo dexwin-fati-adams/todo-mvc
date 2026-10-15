@@ -531,6 +531,119 @@ describe("todoApi.replace", () => {
   });
 });
 
+describe("todoApi.remove", () => {
+  const noContent = () => new Response(null, { status: 204 });
+
+  it("sends DELETE /todos/:id with no body and no Content-Type header", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(noContent()));
+
+    await todoApi.remove(todo.id);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toMatch(new RegExp(`/todos/${todo.id}$`));
+    expect(init?.method).toBe("DELETE");
+    expect(init?.body).toBeUndefined();
+    expect(init?.headers).toEqual({ Accept: "application/json" });
+  });
+
+  it("encodes the id in the path", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(noContent()));
+
+    await todoApi.remove("a/b c");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/todos\/a%2Fb%20c$/);
+  });
+
+  it("returns ok with no value for a 204 response with no body", async () => {
+    stubFetch(() => Promise.resolve(noContent()));
+
+    const result = await todoApi.remove(todo.id);
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toBeUndefined();
+  });
+
+  // Extra, not in the plan list: the success body is never read, so a 200 with a body, even one that is not JSON, is still ok.
+  it("returns ok when the API answers 200, whatever the body is", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse(todo)));
+    expect((await todoApi.remove(todo.id)).isOk()).toBe(true);
+
+    stubFetch(() => Promise.resolve(new Response("<html>oops</html>", { status: 200 })));
+    expect((await todoApi.remove(todo.id)).isOk()).toBe(true);
+  });
+
+  it("returns API_ERROR with status and message for a 400", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "VALIDATION_ERROR", message: "Invalid id" }, 400)),
+    );
+
+    const result = await todoApi.remove(todo.id);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 400,
+      message: "Invalid id",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 404", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "NOT_FOUND", message: "Todo not found" }, 404)),
+    );
+
+    const result = await todoApi.remove(todo.id);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 404,
+      message: "Todo not found",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 503", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Try again later" }, 503),
+      ),
+    );
+
+    const result = await todoApi.remove(todo.id);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 503,
+      message: "Try again later",
+    });
+  });
+
+  it("returns NETWORK_ERROR when fetch throws", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const result = await todoApi.remove(todo.id);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "NETWORK_ERROR",
+      message: "Failed to fetch",
+    });
+  });
+
+  // Plan test 8 said PARSE_ERROR here. The adapter never reads a success body for remove, and toApiError already falls back
+  // to the status text when an error body is not readable, so the real behaviour to prove is that fallback.
+  it("falls back to the status text when the error body is not JSON", async () => {
+    stubFetch(() =>
+      Promise.resolve(new Response("boom", { status: 500, statusText: "Server Error" })),
+    );
+
+    const result = await todoApi.remove(todo.id);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 500,
+      message: "Server Error",
+    });
+  });
+});
+
 describe("formatError", () => {
   it("formats each error type", () => {
     expect(formatError({ type: "API_ERROR", status: 503, message: "Down" })).toBe(

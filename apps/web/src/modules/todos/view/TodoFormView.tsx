@@ -15,9 +15,8 @@ export type TodoFormViewProps = {
 const INPUT_ID = "new-todo-title";
 const MESSAGE_ID = "new-todo-message";
 
-//TodoFormView only draws the form from the props it receives. It checks nothing and sends nothing.
-//While pending, the button is blocked with aria-disabled and not with the disabled attribute, so it stays in the
-// tab order and keyboard focus is not lost. The flow is what stops a repeated submit.
+//This code shows a form where users type a todo and click Add todo. It shows an error if something is wrong
+// and Adding… while the todo is being saved.
 export function TodoFormView({
   title,
   status,

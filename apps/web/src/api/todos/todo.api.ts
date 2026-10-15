@@ -111,15 +111,7 @@ function toQueryString(query: ListQuery): string {
     .with(false, () => `?${text}`)
     .exhaustive();
 }
-//This creates a list function that asks the backend for todos, adds any filters to the /todos URL,
-// and checks that the response has the correct todo format.
-//create sends the new todo's title to the backend with POST /todos and checks that the response is a valid todo.
-//update sends only the changed fields to the backend with PATCH /todos/:id and checks that the response is a valid todo.
-// The body is checked with UpdateTodoRequestSchema first, so an invalid body never leaves the adapter.
-// The id is encoded, so it can only ever be one part of the path.
-//replace sends the full todo representation (title and completed) to the backend with PUT /todos/:id and checks that the response is a valid todo.
-// The body is checked with ReplaceTodoRequestSchema first, so an invalid body never leaves the adapter.
-// The adapter does not trim. The flow trims the title before it calls replace.
+
 export const todoApi = {
   list: (query: ListQuery = {}) => request(`/todos${toQueryString(query)}`, TodoListResponseSchema),
   create: (body: CreateTodoRequest) =>
@@ -148,4 +140,6 @@ export const todoApi = {
           message: parsedBody.error.message,
         });
   },
+  remove: (id: string): ResultAsync<undefined, ClientError> =>
+    send(`/todos/${encodeURIComponent(id)}`, { method: "DELETE" }).map((): undefined => undefined),
 };

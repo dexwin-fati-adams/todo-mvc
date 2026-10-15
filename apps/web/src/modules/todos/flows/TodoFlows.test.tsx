@@ -6,10 +6,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
+import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
 
 vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
+vi.mock("@/modules/todos/hooks/useDeleteTodo");
 
 type HookResult = ReturnType<typeof useTodos>;
 type ToggleOutcome = Result<Todo, ClientError>;
@@ -58,6 +60,9 @@ beforeEach(() => {
   toggle.mockReset();
   toggle.mockResolvedValue(ok(todo));
   vi.mocked(useToggleTodo).mockReturnValue({ toggle });
+  vi.mocked(useDeleteTodo).mockReturnValue({
+    remove: vi.fn().mockResolvedValue(ok(undefined)),
+  });
 });
 
 describe("TodoFlows", () => {

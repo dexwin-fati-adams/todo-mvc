@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext, type Route } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Page, type Route } from "@playwright/test";
 import { createDb, type Db } from "@/lib/db.js";
 import { config } from "@/lib/config.js";
 import { sql } from "drizzle-orm";
@@ -789,6 +789,199 @@ test.describe("Toggle todo checkbox (browser)", () => {
 
     await expect(page.getByText("No todos yet.")).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
+  });
+});
+
+test.describe("Delete todo button (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const CORS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "*",
+  };
+  const isTodoItem = (url: URL) => url.port === "4001" && /^\/todos\/[^/]+$/.test(url.pathname);
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+  const ALREADY_DELETED = "That todo was already deleted. The list has been refreshed.";
+
+  const deleteButton = (page: Page, title: string) =>
+    page.getByRole("button", { name: `Delete “${title}”` });
+
+  async function statusOf(request: APIRequestContext, id: string): Promise<number> {
+    return (await request.get(`/todos/${id}`)).status();
+  }
+
+  test("deletes a todo from its Delete button, and the API no longer has it", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    const dog = await createTodo(request, "Walk dog");
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+
+    await deleteButton(page, "Buy milk").click();
+
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByText("Deleted “Buy milk”.")).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(await statusOf(request, milk.id)).toBe(404);
+    expect(await statusOf(request, dog.id)).toBe(200);
+
+    await page.reload();
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("checkbox", { name: "Walk dog" })).toBeVisible();
+  });
+
+  test("deletes with the keyboard only, and focus moves to the next Delete button", async ({
+    page,
+    request,
+  }) => {
+    const first = await createTodo(request, "Buy milk");
+    await createTodo(request, "Walk dog");
+    await page.goto(WEB_URL);
+    const rows = page.getByRole("listitem");
+    await expect(rows).toHaveCount(2);
+
+    // Order-agnostic: whichever row is first in the page is deleted, the second row is the neighbour.
+    const firstDelete = rows.first().getByRole("button", { name: /^Delete/ });
+    const neighbourLabel = await rows
+      .nth(1)
+      .getByRole("button", { name: /^Delete/ })
+      .getAttribute("aria-label");
+    expect(neighbourLabel).not.toBeNull();
+
+    await rows.first().getByRole("checkbox").focus();
+    for (let i = 0; i < 3; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await firstDelete.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+    }
+    await expect(firstDelete).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: neighbourLabel ?? "" })).toBeFocused();
+    expect([404, 200]).toContain(await statusOf(request, first.id));
+  });
+
+  test("sends only one DELETE request when the user clicks again while it is pending", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    const deletes: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "DELETE") deletes.push(req.url());
+    });
+    await page.route(isTodoItem, async (route) => {
+      if (route.request().method() === "DELETE") {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      await route.continue();
+    });
+    await page.goto(WEB_URL);
+
+    const button = deleteButton(page, "Buy milk");
+    await button.click();
+
+    await expect(page.getByRole("status").filter({ hasText: "Deleting…" })).toBeVisible();
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await button.click({ force: true });
+    await button.press("Enter");
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    expect(deletes).toHaveLength(1);
+    expect(await statusOf(request, milk.id)).toBe(404);
+  });
+
+  test("shows the notice and removes the row when the todo was deleted elsewhere", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+    await expect(deleteButton(page, "Buy milk")).toBeVisible();
+
+    const gone = await request.delete(`/todos/${milk.id}`);
+    expect(gone.ok()).toBe(true);
+    await deleteButton(page, "Buy milk").click();
+
+    await expect(page.getByText(ALREADY_DELETED)).toBeVisible();
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("keeps the row and shows a safe message for a 503, and a retry deletes it", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    const failDeletes = (route: Route) =>
+      route.request().method() === "DELETE"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodoItem, failDeletes);
+    await page.goto(WEB_URL);
+
+    const button = deleteButton(page, "Buy milk");
+    await button.click();
+
+    await expect(page.getByRole("alert")).toHaveText(
+      "Could not delete this todo. Please try again.",
+    );
+    await expect(page.getByRole("checkbox", { name: "Buy milk" })).toBeVisible();
+    await expect(button).toBeFocused();
+    await expect(button).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    expect(await statusOf(request, milk.id)).toBe(200);
+
+    await page.unroute(isTodoItem, failDeletes);
+    await button.click();
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(await statusOf(request, milk.id)).toBe(404);
+  });
+
+  test("shows the empty message and moves focus to it after the last todo is deleted", async ({
+    page,
+    request,
+  }) => {
+    const milk = await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+
+    await deleteButton(page, "Buy milk").click();
+
+    const empty = page.getByText("No todos yet.");
+    await expect(empty).toBeVisible();
+    await expect(empty).toBeFocused();
+    await expect(page.getByText("Deleted “Buy milk”.")).toBeVisible();
+    expect(await statusOf(request, milk.id)).toBe(404);
+  });
+
+  test("shows a visible focus outline when Tab reaches the Delete button", async ({
+    page,
+    request,
+  }) => {
+    await createTodo(request, "Buy milk");
+    await page.goto(WEB_URL);
+
+    const button = deleteButton(page, "Buy milk");
+    await page.getByRole("checkbox", { name: "Buy milk" }).focus();
+    for (let i = 0; i < 3; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await button.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+    }
+
+    await expect(button).toBeFocused();
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await expect(button).toHaveCSS("outline-width", "2px");
   });
 });
 

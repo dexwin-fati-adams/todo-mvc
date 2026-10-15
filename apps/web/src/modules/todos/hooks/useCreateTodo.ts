@@ -19,6 +19,8 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
 export function useCreateTodo() {
   const queryClient = useQueryClient();
 
+  //This code creates a mutation to add a new todo, and when it succeeds,
+  //  it refreshes the todo list to show the new todo.
   const mutation = useMutation<Todo, TodoQueryError, CreateTodoRequest>({
     mutationFn: (body) => unwrap(todoApi.create(body)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["todos"] }),

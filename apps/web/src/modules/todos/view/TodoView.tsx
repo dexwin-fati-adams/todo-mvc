@@ -4,7 +4,7 @@ import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
 import type { ClientError } from "@/api/todos/todo.api";
 import { TodoList } from "@/modules/todos/components/TodoList";
-import type { TodoEditing } from "@/modules/todos/components/TodoItem";
+import type { TodoDeleting, TodoEditing } from "@/modules/todos/components/TodoItem";
 
 export type TodoViewProps = {
   state: TodoServerState;
@@ -15,9 +15,15 @@ export type TodoViewProps = {
   pendingIds: ReadonlySet<string>;
   rowMessages: Readonly<Record<string, string>>;
   editing?: TodoEditing;
+  deleting?: TodoDeleting;
 };
 
-type RowProps = Pick<TodoViewProps, "onToggle" | "pendingIds" | "rowMessages" | "editing">;
+//RowProps selects the properties needed from TodoViewProps, while errorMessage()
+//  checks the type of error and returns a simple message telling the user what went wrong.
+type RowProps = Pick<
+  TodoViewProps,
+  "onToggle" | "pendingIds" | "rowMessages" | "editing" | "deleting"
+>;
 
 function errorMessage(error: ClientError | null): string {
   return match(error)
@@ -49,18 +55,32 @@ function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: (
   );
 }
 
-function EmptyMessage() {
-  return <p className="m-0 p-4 text-center text-slate-600">No todos yet.</p>;
-}
+// This is basically for an empty todo
 
+function EmptyMessage({
+  setFocusTarget,
+}: {
+  setFocusTarget: ((element: HTMLElement | null) => void) | undefined;
+}) {
+  return (
+    <p
+      ref={setFocusTarget}
+      tabIndex={setFocusTarget !== undefined ? -1 : undefined}
+      className="m-0 p-4 text-center text-slate-600"
+    >
+      No todos yet.
+    </p>
+  );
+}
+//ListOrEmpty shows “No todos yet” if the list is empty, otherwise it displays the todo list.
 function ListOrEmpty({ todos, ...rowProps }: { todos: Todo[] } & RowProps) {
-  return todos.length === 0 ? <EmptyMessage /> : <TodoList todos={todos} {...rowProps} />;
+  return todos.length === 0 ? (
+    <EmptyMessage setFocusTarget={rowProps.deleting?.setFocusTarget} />
+  ) : (
+    <TodoList todos={todos} {...rowProps} />
+  );
 }
 
-//ListSection is used for the ready, refreshing, and refresh-failure states.
-//The banner (nothing, "Refreshing…", or the error) always sits in the first slot and the list always sits in the second slot.
-// Because the list never changes position in the tree, React keeps the same checkbox elements between those states,
-// so a checkbox that has focus does not lose it when the list is refreshed.
 function ListSection({
   banner,
   busy,
@@ -75,6 +95,8 @@ function ListSection({
   );
 }
 
+//The delete notice ("Deleted …" or "already deleted") is shown above everything else, outside the state switch.
+// It is not inside ListSection, so it shows in the empty state too, and when it appears it does not move the list.
 export function TodoView({
   state,
   todos,
@@ -84,17 +106,23 @@ export function TodoView({
   pendingIds,
   rowMessages,
   editing,
+  deleting,
 }: TodoViewProps) {
-  const rowProps = { onToggle, pendingIds, rowMessages, editing };
+  const rowProps = { onToggle, pendingIds, rowMessages, editing, deleting };
+  //This code gets the deletion message if one exists;
+  // otherwise, it sets notice to null (nothing to show).
+  //The notice displays a message to the user about the todo deletion,
+  //  such as whether the deletion was successful or failed.
+  const notice = deleting?.notice ?? null;
 
-  return match(state)
+  const content = match(state)
     .with("initial-loading", () => (
       <p role="status" className="m-0 p-4 text-center text-slate-600">
         Loading todos…
       </p>
     ))
     .with("initial-failure", () => <ErrorBanner error={error} onRetry={onRetry} />)
-    .with("empty", () => <EmptyMessage />)
+    .with("empty", () => <EmptyMessage setFocusTarget={deleting?.setFocusTarget} />)
     .with("ready", () => <ListSection banner={null} busy={false} todos={todos} {...rowProps} />)
     .with("refreshing", () => (
       <ListSection
@@ -117,4 +145,15 @@ export function TodoView({
       />
     ))
     .exhaustive();
+
+  return (
+    <>
+      {notice !== null ? (
+        <p role="status" className="m-0 p-2 text-center text-sm text-slate-600">
+          {notice}
+        </p>
+      ) : null}
+      {content}
+    </>
+  );
 }
