@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { err, ok, type Result } from "neverthrow";
-import type { Todo } from "contracts";
+import type { Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
@@ -32,16 +32,26 @@ const doneTodo: Todo = {
 
 const toggle = vi.fn<(id: string, body: UpdateTodoRequest) => Promise<ToggleOutcome>>();
 
-function givenHook(overrides: Partial<HookResult>) {
-  const result: HookResult = {
+function hookResult(overrides: Partial<HookResult>): HookResult {
+  return {
     serverState: "ready",
     error: null,
     refetch: vi.fn(),
     todos: [],
+    counts: null,
     ...overrides,
   };
+}
+
+function givenHook(overrides: Partial<HookResult>) {
+  const result = hookResult(overrides);
   vi.mocked(useTodos).mockReturnValue(result);
   return result;
+}
+
+//Gives each status its own hook result, the way the real hook has one result per status.
+function givenHookByStatus(byStatus: Partial<Record<Status, HookResult>>) {
+  vi.mocked(useTodos).mockImplementation((status) => byStatus[status ?? "all"] ?? hookResult({}));
 }
 
 //Makes the next toggle() call wait until release() is called, so a test can look at the pending state.
@@ -56,6 +66,7 @@ function holdNextToggle() {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   vi.mocked(useTodos).mockReset();
   toggle.mockReset();
   toggle.mockResolvedValue(ok(todo));
@@ -130,10 +141,19 @@ describe("TodoFlows", () => {
     expect(useTodos).toHaveBeenCalledWith("all");
   });
 
-  it("passes a given status to the hook", () => {
+  it("passes the status from the page address to the hook", () => {
+    window.history.replaceState(null, "", "/?status=active");
     givenHook({});
-    render(<TodoFlows status="active" />);
+    render(<TodoFlows />);
     expect(useTodos).toHaveBeenCalledWith("active");
+  });
+
+  it("asks the hook for all todos when the address has an unknown status", () => {
+    window.history.replaceState(null, "", "/?status=bogus");
+    givenHook({});
+    render(<TodoFlows />);
+    expect(useTodos).toHaveBeenCalledWith("all");
+    expect(useTodos).not.toHaveBeenCalledWith("bogus");
   });
 
   it.each<TodoServerState>([
@@ -146,6 +166,110 @@ describe("TodoFlows", () => {
   ])("renders without crashing for %s", (serverState) => {
     givenHook({ serverState });
     expect(() => render(<TodoFlows />)).not.toThrow();
+  });
+});
+
+describe("TodoFlows status filter", () => {
+  it.each<TodoServerState>([
+    "initial-loading",
+    "initial-failure",
+    "empty",
+    "ready",
+    "refreshing",
+    "refresh-failure",
+  ])("keeps the filter links on screen for %s", (serverState) => {
+    givenHook({ serverState, error: { type: "NETWORK_ERROR", message: "Offline" } });
+    render(<TodoFlows />);
+
+    const nav = screen.getByRole("navigation", { name: "Filter todos" });
+    expect(within(nav).getAllByRole("link")).toHaveLength(3);
+  });
+
+  it("starts on All and marks it as the current filter", () => {
+    givenHook({});
+    render(<TodoFlows />);
+
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("shows the counts from the hook on the links", () => {
+    givenHook({ todos: [todo, doneTodo], counts: { active: 1, completed: 1 } });
+    render(<TodoFlows />);
+
+    expect(screen.getByRole("link", { name: "All (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Active (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Completed (1)" })).toBeInTheDocument();
+  });
+
+  it("asks the hook for the status of the link the user clicks", async () => {
+    givenHook({});
+    render(<TodoFlows />);
+    expect(useTodos).toHaveBeenLastCalledWith("all");
+
+    await userEvent.click(screen.getByRole("link", { name: "Active" }));
+    expect(useTodos).toHaveBeenLastCalledWith("active");
+    expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute("aria-current", "page");
+
+    await userEvent.click(screen.getByRole("link", { name: "Completed" }));
+    expect(useTodos).toHaveBeenLastCalledWith("completed");
+
+    await userEvent.click(screen.getByRole("link", { name: "All" }));
+    expect(useTodos).toHaveBeenLastCalledWith("all");
+  });
+
+  it("shows no rows from the previous filter while the new filter is loading", async () => {
+    givenHookByStatus({
+      all: hookResult({ todos: [todo, doneTodo] }),
+      completed: hookResult({ serverState: "initial-loading", todos: [] }),
+    });
+    render(<TodoFlows />);
+    expect(screen.getByText("Buy milk")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "Completed" }));
+
+    expect(screen.queryByText("Buy milk")).not.toBeInTheDocument();
+    expect(screen.queryByText("Walk the dog")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/loading todos/i);
+  });
+
+  it("shows the safe error with Retry for a failed first load, keeps the new filter selected, and lets the user switch", async () => {
+    givenHookByStatus({
+      all: hookResult({ todos: [todo] }),
+      completed: hookResult({
+        serverState: "initial-failure",
+        error: { type: "NETWORK_ERROR", message: "secret-internal-detail" },
+      }),
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("link", { name: "Completed" }));
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(screen.queryByText(/secret-internal-detail/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Completed" })).toHaveAttribute("aria-current", "page");
+
+    await userEvent.click(screen.getByRole("link", { name: "All" }));
+
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("Buy milk")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("retries the selected filter and no other", async () => {
+    const allResult = hookResult({ todos: [todo] });
+    const completedResult = hookResult({
+      serverState: "initial-failure",
+      error: { type: "NETWORK_ERROR", message: "Offline" },
+    });
+    givenHookByStatus({ all: allResult, completed: completedResult });
+    render(<TodoFlows />);
+    await userEvent.click(screen.getByRole("link", { name: "Completed" }));
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(completedResult.refetch).toHaveBeenCalledTimes(1);
+    expect(allResult.refetch).not.toHaveBeenCalled();
   });
 });
 

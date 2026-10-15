@@ -42,16 +42,34 @@ function listOf(todos: (typeof todo)[]) {
   };
 }
 
+//The rows the server would return for each status.
+function todosFor(status: Status | undefined) {
+  if (status === "active") {
+    return [todo];
+  }
+  if (status === "completed") {
+    return [doneTodo];
+  }
+  return [todo, doneTodo];
+}
+
+function givenListByStatus() {
+  api.list.mockImplementation((query) => okAsync(listOf(todosFor(query?.status))));
+}
+
 const apiError = { type: "API_ERROR" as const, status: 503, message: "Down" };
 
 function neverResolves<T>(): ResultAsync<T, never> {
   return ResultAsync.fromSafePromise(new Promise<T>(() => {}));
 }
 
-function createWrapper() {
-  const queryClient = new QueryClient({
+function createClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+}
+
+function createWrapper(queryClient: QueryClient = createClient()) {
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -111,6 +129,134 @@ describe("useTodos query", () => {
 
     await waitFor(() => expect(api.list).toHaveBeenCalledWith({ status: "completed" }));
     await waitFor(() => expect(result.current.serverState).toBe("ready"));
+  });
+});
+
+describe("useTodos query identity", () => {
+  it.each<Status>(["all", "active", "completed"])(
+    "requests the %s status from the server",
+    async (status) => {
+      const { result } = renderHook(() => useTodos(status), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.serverState).toBe("ready"));
+
+      expect(api.list).toHaveBeenCalledTimes(1);
+      expect(api.list).toHaveBeenCalledWith({ status });
+    },
+  );
+
+  it("gives each status its own query key, and every key starts with todos", async () => {
+    givenListByStatus();
+    const queryClient = createClient();
+    const { result, rerender } = renderHook(({ status }) => useTodos(status), {
+      wrapper: createWrapper(queryClient),
+      initialProps: { status: "all" as Status },
+    });
+    await waitFor(() => expect(result.current.todos).toEqual([todo, doneTodo]));
+
+    rerender({ status: "active" });
+    await waitFor(() => expect(result.current.todos).toEqual([todo]));
+
+    rerender({ status: "completed" });
+    await waitFor(() => expect(result.current.todos).toEqual([doneTodo]));
+
+    const keys = queryClient
+      .getQueryCache()
+      .findAll({ queryKey: ["todos"] })
+      .map((query) => query.queryKey);
+    expect(keys).toHaveLength(3);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        ["todos", "all"],
+        ["todos", "active"],
+        ["todos", "completed"],
+      ]),
+    );
+  });
+
+  it("shows loading and no rows when the status changes and the new request is pending", async () => {
+    givenListByStatus();
+    const { result, rerender } = renderHook(({ status }) => useTodos(status), {
+      wrapper: createWrapper(),
+      initialProps: { status: "active" as Status },
+    });
+    await waitFor(() => expect(result.current.todos).toEqual([todo]));
+
+    api.list.mockReturnValue(neverResolves());
+    rerender({ status: "completed" });
+
+    await waitFor(() => expect(result.current.serverState).toBe("initial-loading"));
+    expect(result.current.todos).toEqual([]);
+  });
+
+  it("shows a status's own earlier rows as refreshing when the user comes back to it, never another status's rows", async () => {
+    givenListByStatus();
+    const { result, rerender } = renderHook(({ status }) => useTodos(status), {
+      wrapper: createWrapper(),
+      initialProps: { status: "all" as Status },
+    });
+    await waitFor(() => expect(result.current.todos).toEqual([todo, doneTodo]));
+    rerender({ status: "active" });
+    await waitFor(() => expect(result.current.todos).toEqual([todo]));
+
+    api.list.mockReturnValue(neverResolves());
+    rerender({ status: "all" });
+
+    await waitFor(() => expect(result.current.serverState).toBe("refreshing"));
+    expect(result.current.todos).toEqual([todo, doneTodo]);
+  });
+});
+
+describe("useTodos counts", () => {
+  it("has no counts before the first response", () => {
+    const { result } = renderHook(() => useTodos("all"), { wrapper: createWrapper() });
+
+    expect(result.current.counts).toBeNull();
+  });
+
+  it("returns the counts of the response once the list loads", async () => {
+    const { result } = renderHook(() => useTodos("all"), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.serverState).toBe("ready"));
+
+    expect(result.current.counts).toEqual({ active: 1, completed: 1 });
+  });
+
+  it("has no counts when the first load fails", async () => {
+    api.list.mockReturnValue(errAsync(apiError));
+
+    const { result } = renderHook(() => useTodos("all"), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.serverState).toBe("initial-failure"));
+
+    expect(result.current.counts).toBeNull();
+  });
+
+  it("has no counts while a new status loads for the first time", async () => {
+    givenListByStatus();
+    const { result, rerender } = renderHook(({ status }) => useTodos(status), {
+      wrapper: createWrapper(),
+      initialProps: { status: "all" as Status },
+    });
+    await waitFor(() => expect(result.current.counts).toEqual({ active: 1, completed: 1 }));
+
+    api.list.mockReturnValue(neverResolves());
+    rerender({ status: "completed" });
+
+    await waitFor(() => expect(result.current.serverState).toBe("initial-loading"));
+    expect(result.current.counts).toBeNull();
+  });
+
+  it("keeps the counts of the response on screen when a refetch fails", async () => {
+    const { result } = renderHook(() => useTodos("all"), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.serverState).toBe("ready"));
+
+    api.list.mockReturnValue(errAsync(apiError));
+    result.current.refetch();
+
+    await waitFor(() => expect(result.current.serverState).toBe("refresh-failure"));
+
+    expect(result.current.counts).toEqual({ active: 1, completed: 1 });
   });
 });
 
