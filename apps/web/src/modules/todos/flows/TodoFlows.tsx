@@ -88,6 +88,7 @@ export function TodoFlows() {
         pendingIds={pendingIds}
         rowMessages={rowMessages}
         deleting={deleting}
+        emptyMessage={status === "completed" ? "No completed todos." : undefined}
       />
     </>
   );
