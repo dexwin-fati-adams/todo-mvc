@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 import { match } from "ts-pattern";
-import type { Status, Todo } from "contracts";
+import type { Todo } from "contracts";
 import type { ClientError } from "@/api/todos/todo.api";
+import { StatusFilter } from "@/modules/todos/components/StatusFilter";
+import { useStatusFilter } from "@/modules/todos/flows/useStatusFilter";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useTodoDeleteFlow } from "@/modules/todos/flows/TodoDeleteFlow";
@@ -29,8 +31,10 @@ function withoutKey(record: Readonly<Record<string, string>>, key: string) {
   return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
-export function TodoFlows({ status = "all" }: { status?: Status }) {
-  const { serverState, todos, error, refetch } = useTodos(status);
+export function TodoFlows() {
+  //The selected status lives in the page address, so a reload, Back, and a shared link all keep it.
+  const { status, select } = useStatusFilter();
+  const { serverState, todos, counts, error, refetch } = useTodos(status);
   const { toggle } = useToggleTodo();
   const pendingRef = useRef(new Set<string>());
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set());
@@ -73,15 +77,19 @@ export function TodoFlows({ status = "all" }: { status?: Status }) {
   };
 
   return (
-    <TodoView
-      state={serverState}
-      todos={todos}
-      error={error}
-      onRetry={refetch}
-      onToggle={onToggle}
-      pendingIds={pendingIds}
-      rowMessages={rowMessages}
-      deleting={deleting}
-    />
+    <>
+      <StatusFilter status={status} counts={counts} onSelect={select} />
+      <TodoView
+        state={serverState}
+        todos={todos}
+        error={error}
+        onRetry={refetch}
+        onToggle={onToggle}
+        pendingIds={pendingIds}
+        rowMessages={rowMessages}
+        deleting={deleting}
+        emptyMessage={status === "completed" ? "No completed todos." : undefined}
+      />
+    </>
   );
 }

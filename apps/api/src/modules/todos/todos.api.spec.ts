@@ -985,6 +985,286 @@ test.describe("Delete todo button (browser)", () => {
   });
 });
 
+// M38 browser tests 34 to 44: the All, Active and Completed filter controls.
+// Each test runs against the real API and the real test database.
+test.describe("Status filter controls (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const isTodosList = (url: URL) => url.port === "4001" && url.pathname === "/todos";
+  const requestedStatus = (url: string) => new URL(url).searchParams.get("status");
+
+  // Two active todos and one completed todo, so every filter has something different to show.
+  async function seedMixed(request: APIRequestContext) {
+    const milk = await createTodo(request, "Buy milk");
+    const report = await createTodo(request, "Write report");
+    const dog = await createTodo(request, "Walk dog");
+    await request.patch(`/todos/${dog.id}`, { data: { completed: true } });
+    return { milk, report, dog };
+  }
+
+  // The filter links live in a labelled nav. The name starts with the label, because a count may follow it, e.g. "Active (2)".
+  const filterLink = (page: Page, label: "All" | "Active" | "Completed") =>
+    page
+      .getByRole("navigation", { name: "Filter todos" })
+      .getByRole("link", { name: new RegExp(`^${label}`) });
+
+  const rowCheckbox = (page: Page, title: string) => page.getByRole("checkbox", { name: title });
+
+  // 34
+  test("clicking Active requests status=active and shows only the active todos", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+
+    const activeRequest = page.waitForRequest(
+      (req) => isTodosList(new URL(req.url())) && requestedStatus(req.url()) === "active",
+    );
+    await filterLink(page, "Active").click();
+    await activeRequest;
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+    await expect(rowCheckbox(page, "Write report")).toBeVisible();
+    await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
+  });
+
+  // 35
+  test("clicking Completed and then All shows the correct rows each time", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+
+    await filterLink(page, "Completed").click();
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Walk dog")).toBeChecked();
+    await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
+
+    await filterLink(page, "All").click();
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+    await expect(rowCheckbox(page, "Walk dog")).toBeVisible();
+  });
+
+  // 36
+  test("marks only the selected link with aria-current and a different computed style", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+
+    await filterLink(page, "Active").click();
+
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(filterLink(page, "All")).not.toHaveAttribute("aria-current", /.*/);
+    await expect(filterLink(page, "Completed")).not.toHaveAttribute("aria-current", /.*/);
+
+    // The style must differ without relying on colour, so the font weight is compared.
+    const weightOf = (label: "All" | "Active" | "Completed") =>
+      filterLink(page, label).evaluate((element) => getComputedStyle(element).fontWeight);
+    const selectedWeight = await weightOf("Active");
+    expect(await weightOf("All")).not.toBe(selectedWeight);
+    expect(await weightOf("Completed")).not.toBe(selectedWeight);
+  });
+
+  // 37
+  test("keeps Completed selected and shows only completed todos after a reload", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(`${WEB_URL}/?status=completed`);
+
+    await expect(filterLink(page, "Completed")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Walk dog")).toBeVisible();
+
+    await page.reload();
+
+    await expect(page).toHaveURL(/status=completed/);
+    await expect(filterLink(page, "Completed")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
+  });
+
+  // 38
+  test("the Back button returns to the previous filter and its list", async ({ page, request }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+
+    await filterLink(page, "Active").click();
+    await expect(page).toHaveURL(/status=active/);
+    await filterLink(page, "Completed").click();
+    await expect(page).toHaveURL(/status=completed/);
+
+    await page.goBack();
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
+
+    await page.goBack();
+
+    await expect(page).not.toHaveURL(/status=/);
+    await expect(filterLink(page, "All")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+  });
+
+  // 39
+  test("shows All for ?status=bogus, cleans the address, and never sends bogus to the API", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    const requestedStatuses: (string | null)[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url()))) requestedStatuses.push(requestedStatus(req.url()));
+    });
+
+    await page.goto(`${WEB_URL}/?status=bogus`);
+
+    await expect(filterLink(page, "All")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+    await expect(page).not.toHaveURL(/status=/);
+    expect(requestedStatuses.length).toBeGreaterThan(0);
+    expect(requestedStatuses).not.toContain("bogus");
+  });
+
+  // 40
+  test("hides the previous rows while Completed is held, shows loading, and still lets the user switch", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+
+    // Holds only the Completed list response, so the first load of that filter stays pending.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(isTodosList, async (route) => {
+      if (requestedStatus(route.request().url()) === "completed") {
+        await held;
+      }
+      await route.continue();
+    });
+
+    await filterLink(page, "Completed").click();
+
+    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("listitem")).toHaveCount(0);
+    await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
+    await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
+    await expect(filterLink(page, "Completed")).toHaveAttribute("aria-current", "page");
+
+    // The filter control stays usable while the request is pending.
+    await filterLink(page, "Active").click();
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+
+    release();
+  });
+
+  // 41
+  test("works with the keyboard only: Tab to Active, press Enter, and focus stays on Active", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+
+    await filterLink(page, "All").focus();
+    await page.keyboard.press("Tab");
+    await expect(filterLink(page, "Active")).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(filterLink(page, "Active")).toBeFocused();
+  });
+
+  // 42
+  test("shows counts that match the API, and they change after a todo is toggled", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    const before = (await (await request.get("/todos")).json()) as TodoListResponse;
+    expect(before.activeCount).toBe(2);
+    expect(before.completedCount).toBe(1);
+
+    await page.goto(WEB_URL);
+
+    await expect(filterLink(page, "All")).toHaveText(
+      `All (${before.activeCount + before.completedCount})`,
+    );
+    await expect(filterLink(page, "Active")).toHaveText(`Active (${before.activeCount})`);
+    await expect(filterLink(page, "Completed")).toHaveText(`Completed (${before.completedCount})`);
+
+    // The counts describe all todos, so they stay the same when another filter is selected.
+    await filterLink(page, "Completed").click();
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(filterLink(page, "Active")).toHaveText(`Active (${before.activeCount})`);
+
+    await filterLink(page, "All").click();
+    await rowCheckbox(page, "Buy milk").click();
+
+    await expect(filterLink(page, "Active")).toHaveText(`Active (${before.activeCount - 1})`);
+    await expect(filterLink(page, "Completed")).toHaveText(
+      `Completed (${before.completedCount + 1})`,
+    );
+    const after = (await (await request.get("/todos")).json()) as TodoListResponse;
+    expect(after.activeCount).toBe(before.activeCount - 1);
+    expect(after.completedCount).toBe(before.completedCount + 1);
+  });
+
+  // 43
+  test("shows No completed todos. when the Completed filter has no todos", async ({
+    page,
+    request,
+  }) => {
+    await createTodo(request, "Buy milk");
+
+    await page.goto(`${WEB_URL}/?status=completed`);
+
+    await expect(page.getByText("No completed todos.")).toBeVisible();
+    await expect(page.getByText("No todos yet.")).toHaveCount(0);
+    await expect(filterLink(page, "Completed")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("list")).toHaveCount(0);
+  });
+
+  // 44
+  test("shows a visible focus outline when Tab reaches a filter link", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(3);
+
+    const link = filterLink(page, "All");
+    for (let i = 0; i < 3; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await link.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+    }
+
+    await expect(link).toBeFocused();
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await expect(link).toHaveCSS("outline-width", "2px");
+  });
+});
+
 let closed = false;
 test.afterAll(async () => {
   if (closed) return;

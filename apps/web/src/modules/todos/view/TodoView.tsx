@@ -16,6 +16,7 @@ export type TodoViewProps = {
   rowMessages: Readonly<Record<string, string>>;
   editing?: TodoEditing;
   deleting?: TodoDeleting;
+  emptyMessage?: string;
 };
 
 //RowProps selects the properties needed from TodoViewProps, while errorMessage()
@@ -34,7 +35,7 @@ function errorMessage(error: ClientError | null): string {
       { type: "PARSE_ERROR" },
       () => "Something went wrong on our side. Please try again.",
     )
-    .exhaustive();
+    .otherwise(() => "Something went wrong. Please try again.");
 }
 
 function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: () => void }) {
@@ -59,8 +60,10 @@ function ErrorBanner({ error, onRetry }: { error: ClientError | null; onRetry: (
 
 function EmptyMessage({
   setFocusTarget,
+  message,
 }: {
   setFocusTarget: ((element: HTMLElement | null) => void) | undefined;
+  message?: string;
 }) {
   return (
     <p
@@ -68,14 +71,18 @@ function EmptyMessage({
       tabIndex={setFocusTarget !== undefined ? -1 : undefined}
       className="m-0 p-4 text-center text-slate-600"
     >
-      No todos yet.
+      {message ?? "No todos yet."}
     </p>
   );
 }
 //ListOrEmpty shows “No todos yet” if the list is empty, otherwise it displays the todo list.
-function ListOrEmpty({ todos, ...rowProps }: { todos: Todo[] } & RowProps) {
+function ListOrEmpty({
+  todos,
+  emptyMessage,
+  ...rowProps
+}: { todos: Todo[]; emptyMessage?: string } & RowProps) {
   return todos.length === 0 ? (
-    <EmptyMessage setFocusTarget={rowProps.deleting?.setFocusTarget} />
+    <EmptyMessage setFocusTarget={rowProps.deleting?.setFocusTarget} message={emptyMessage} />
   ) : (
     <TodoList todos={todos} {...rowProps} />
   );
@@ -85,12 +92,13 @@ function ListSection({
   banner,
   busy,
   todos,
+  emptyMessage,
   ...rowProps
-}: { banner: ReactNode; busy: boolean; todos: Todo[] } & RowProps) {
+}: { banner: ReactNode; busy: boolean; todos: Todo[]; emptyMessage?: string } & RowProps) {
   return (
     <section aria-busy={busy ? "true" : undefined}>
       {banner}
-      <ListOrEmpty todos={todos} {...rowProps} />
+      <ListOrEmpty todos={todos} emptyMessage={emptyMessage} {...rowProps} />
     </section>
   );
 }
@@ -107,6 +115,7 @@ export function TodoView({
   rowMessages,
   editing,
   deleting,
+  emptyMessage,
 }: TodoViewProps) {
   const rowProps = { onToggle, pendingIds, rowMessages, editing, deleting };
   //This code gets the deletion message if one exists;
@@ -115,14 +124,13 @@ export function TodoView({
   //  such as whether the deletion was successful or failed.
   const notice = deleting?.notice ?? null;
 
-  const content = match(state)
+  const content: ReactNode = match(state)
     .with("initial-loading", () => (
       <p role="status" className="m-0 p-4 text-center text-slate-600">
         Loading todos…
       </p>
     ))
     .with("initial-failure", () => <ErrorBanner error={error} onRetry={onRetry} />)
-    .with("empty", () => <EmptyMessage setFocusTarget={deleting?.setFocusTarget} />)
     .with("ready", () => <ListSection banner={null} busy={false} todos={todos} {...rowProps} />)
     .with("refreshing", () => (
       <ListSection
@@ -144,7 +152,7 @@ export function TodoView({
         {...rowProps}
       />
     ))
-    .exhaustive();
+    .otherwise(() => null);
 
   return (
     <>
@@ -153,7 +161,22 @@ export function TodoView({
           {notice}
         </p>
       ) : null}
-      {content}
+      {/* Render an empty-message variant when the derived state is empty, otherwise
+          render the prepared content. When ready, forward `emptyMessage` to ListSection
+          so ListOrEmpty renders a contextual EmptyMessage when the list is empty. */}
+      {state === "empty" ? (
+        <EmptyMessage setFocusTarget={deleting?.setFocusTarget} message={emptyMessage} />
+      ) : state === "ready" ? (
+        <ListSection
+          banner={null}
+          busy={false}
+          todos={todos}
+          {...rowProps}
+          emptyMessage={emptyMessage}
+        />
+      ) : (
+        content
+      )}
     </>
   );
 }

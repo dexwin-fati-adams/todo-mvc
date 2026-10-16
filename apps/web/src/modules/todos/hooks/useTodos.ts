@@ -19,6 +19,13 @@ export class TodoQueryError extends Error {
   }
 }
 
+//The counts of the response that is on screen. They are null while there is no response for the selected status,
+// so the controls never show a number that belongs to another status.
+export type TodoCounts = {
+  active: number;
+  completed: number;
+};
+
 //This function takes the API result, returns the data if the request succeeds,
 //  and throws a TodoQueryError if the request fails
 const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
@@ -47,7 +54,8 @@ function deriveServerState(input: {
 }
 
 //useTodos is a custom React hook that fetches todos from the backend, tracks whether the request is loading/failed/empty/ready,
-//  and gives the UI the todos, error, and a way to refresh them.
+//  and gives the UI the todos, the counts, the error, and a way to refresh them.
+//The query key contains the status, so each status has its own result and a new status starts with no rows.
 export function useTodos(status: Status = "all") {
   const query = useQuery<TodoListResponse, TodoQueryError>({
     queryKey: ["todos", status],
@@ -68,5 +76,7 @@ export function useTodos(status: Status = "all") {
       void query.refetch();
     },
     todos: data?.todos ?? [],
+    counts:
+      data === undefined ? null : { active: data.activeCount, completed: data.completedCount },
   };
 }
