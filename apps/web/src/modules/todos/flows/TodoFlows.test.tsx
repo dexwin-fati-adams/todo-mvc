@@ -196,9 +196,9 @@ describe("TodoFlows status filter", () => {
     givenHook({ todos: [todo, doneTodo], counts: { active: 1, completed: 1 } });
     render(<TodoFlows />);
 
-    expect(screen.getByRole("link", { name: "All (2)" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Active (1)" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Completed (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^All\s*\(2\)$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Active\s*\(1\)$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Completed\s*\(1\)$/ })).toBeInTheDocument();
   });
 
   it("asks the hook for the status of the link the user clicks", async () => {
