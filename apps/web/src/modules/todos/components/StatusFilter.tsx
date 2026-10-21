@@ -7,6 +7,7 @@ type StatusFilterProps = {
   status: Status;
   counts: TodoCounts | null;
   onSelect: (status: Status) => void;
+  hrefFor?: (status: Status) => string;
 };
 
 const OPTIONS = [
@@ -28,7 +29,7 @@ function countFor(status: Status, counts: TodoCounts | null): number | null {
     .exhaustive();
 }
 
-export function StatusFilter({ status, counts, onSelect }: StatusFilterProps) {
+export function StatusFilter({ status, counts, onSelect, hrefFor }: StatusFilterProps) {
   const handleClick = (event: MouseEvent<HTMLAnchorElement>, next: Status) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
       return;
@@ -45,7 +46,7 @@ export function StatusFilter({ status, counts, onSelect }: StatusFilterProps) {
         return (
           <a
             key={option.status}
-            href={option.href}
+            href={hrefFor === undefined ? option.href : hrefFor(option.status)}
             aria-current={selected ? "page" : undefined}
             onClick={(event) => handleClick(event, option.status)}
             className={`rounded border px-3 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${

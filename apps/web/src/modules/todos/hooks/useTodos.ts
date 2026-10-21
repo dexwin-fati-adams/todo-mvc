@@ -26,6 +26,14 @@ export type TodoCounts = {
   completed: number;
 };
 
+export type TodoListQuery = {
+  status?: Status;
+  search?: string | null;
+  page?: number;
+};
+
+type ListRequest = NonNullable<Parameters<typeof todoApi.list>[0]>;
+
 //This function takes the API result, returns the data if the request succeeds,
 //  and throws a TodoQueryError if the request fails
 const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
@@ -35,6 +43,14 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
       throw new TodoQueryError(error);
     },
   );
+
+function toListRequest(status: Status, search: string | null, page: number): ListRequest {
+  return {
+    status,
+    ...(search === null ? {} : { search }),
+    ...(page > 1 ? { page } : {}),
+  };
+}
 
 //This function looks at whether the todos are loading, failed, empty, refreshing, or successfully loaded,
 // and then returns the correct TodoServerState for the UI.
@@ -56,10 +72,10 @@ function deriveServerState(input: {
 //useTodos is a custom React hook that fetches todos from the backend, tracks whether the request is loading/failed/empty/ready,
 //  and gives the UI the todos, the counts, the error, and a way to refresh them.
 //The query key contains the status, so each status has its own result and a new status starts with no rows.
-export function useTodos(status: Status = "all") {
+export function useTodos({ status = "all", search = null, page = 1 }: TodoListQuery = {}) {
   const query = useQuery<TodoListResponse, TodoQueryError>({
-    queryKey: ["todos", status],
-    queryFn: () => unwrap(todoApi.list({ status })),
+    queryKey: ["todos", status, search, page],
+    queryFn: () => unwrap(todoApi.list(toListRequest(status, search, page))),
   });
 
   const data = query.data;

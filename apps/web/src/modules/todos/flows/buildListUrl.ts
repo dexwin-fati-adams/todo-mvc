@@ -7,9 +7,9 @@ export type ListUrlParams = {
   page: number;
 };
 
-//This function is the one place that writes the query string. It keeps params it does not own
-// (like utm), writes status and search only when they are not the default, and writes page
-// only above 1. URLSearchParams does the encoding, so &, #, % and spaces cannot change the query.
+//This function builds a URL by taking the current URL, updating its status, search,
+// and page parameters based on the user's selections, and keeping other existing parameters unchanged. If there are no query parameters left,
+// it returns just the pathname; otherwise, it adds the updated parameters to the URL.
 export function buildListUrl(
   pathname: string,
   currentSearch: string,

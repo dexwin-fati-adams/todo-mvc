@@ -32,10 +32,15 @@ function setup(value = "") {
 describe("SearchBox", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    //Testing Library waits on a setTimeout(0) after every userEvent action. It only moves fake timers
+    // forward when a global called "jest" exists. Vitest has none, so the wait never ends and the test
+    // times out. This gives it the one function it needs.
+    vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime.bind(vi) });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("is a search form with the visible label Search todos", () => {

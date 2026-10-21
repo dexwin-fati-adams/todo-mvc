@@ -51,7 +51,15 @@ function givenHook(overrides: Partial<HookResult>) {
 
 //Gives each status its own hook result, the way the real hook has one result per status.
 function givenHookByStatus(byStatus: Partial<Record<Status, HookResult>>) {
-  vi.mocked(useTodos).mockImplementation((status) => byStatus[status ?? "all"] ?? hookResult({}));
+  vi.mocked(useTodos).mockImplementation(
+    (query) => byStatus[query?.status ?? "all"] ?? hookResult({}),
+  );
+}
+
+function givenHookBySearch(results: { searched: HookResult; unsearched: HookResult }) {
+  vi.mocked(useTodos).mockImplementation((query) =>
+    query?.search ? results.searched : results.unsearched,
+  );
 }
 
 //Makes the next toggle() call wait until release() is called, so a test can look at the pending state.
@@ -63,6 +71,12 @@ function holdNextToggle() {
     }),
   );
   return (outcome: ToggleOutcome) => release(outcome);
+}
+
+const searchBox = () => screen.getByRole("searchbox", { name: "Search todos" });
+
+async function searchFor(text: string) {
+  await userEvent.type(searchBox(), `${text}{Enter}`);
 }
 
 beforeEach(() => {
@@ -138,22 +152,22 @@ describe("TodoFlows", () => {
   it("asks the hook for all todos by default", () => {
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith("all");
+    expect(useTodos).toHaveBeenCalledWith({ status: "all", search: null, page: 1 });
   });
 
   it("passes the status from the page address to the hook", () => {
     window.history.replaceState(null, "", "/?status=active");
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith("active");
+    expect(useTodos).toHaveBeenCalledWith({ status: "active", search: null, page: 1 });
   });
 
   it("asks the hook for all todos when the address has an unknown status", () => {
     window.history.replaceState(null, "", "/?status=bogus");
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith("all");
-    expect(useTodos).not.toHaveBeenCalledWith("bogus");
+    expect(useTodos).toHaveBeenCalledWith({ status: "all", search: null, page: 1 });
+    expect(useTodos).not.toHaveBeenCalledWith(expect.objectContaining({ status: "bogus" }));
   });
 
   it.each<TodoServerState>([
@@ -204,17 +218,17 @@ describe("TodoFlows status filter", () => {
   it("asks the hook for the status of the link the user clicks", async () => {
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenLastCalledWith("all");
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: null, page: 1 });
 
     await userEvent.click(screen.getByRole("link", { name: "Active" }));
-    expect(useTodos).toHaveBeenLastCalledWith("active");
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "active", search: null, page: 1 });
     expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute("aria-current", "page");
 
     await userEvent.click(screen.getByRole("link", { name: "Completed" }));
-    expect(useTodos).toHaveBeenLastCalledWith("completed");
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "completed", search: null, page: 1 });
 
     await userEvent.click(screen.getByRole("link", { name: "All" }));
-    expect(useTodos).toHaveBeenLastCalledWith("all");
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: null, page: 1 });
   });
 
   it("shows no rows from the previous filter while the new filter is loading", async () => {
@@ -270,6 +284,203 @@ describe("TodoFlows status filter", () => {
 
     expect(completedResult.refetch).toHaveBeenCalledTimes(1);
     expect(allResult.refetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("TodoFlows search", () => {
+  it.each<TodoServerState>([
+    "initial-loading",
+    "initial-failure",
+    "empty",
+    "ready",
+    "refreshing",
+    "refresh-failure",
+  ])("keeps the search box and the filter links on screen for %s", (serverState) => {
+    window.history.replaceState(null, "", "/?search=milk");
+    givenHook({ serverState, error: { type: "NETWORK_ERROR", message: "Offline" } });
+    render(<TodoFlows />);
+
+    expect(screen.getByRole("search")).toBeInTheDocument();
+    expect(searchBox()).toHaveValue("milk");
+    const nav = screen.getByRole("navigation", { name: "Filter todos" });
+    expect(within(nav).getAllByRole("link")).toHaveLength(3);
+  });
+
+  it("asks the hook for the committed search and the current status", async () => {
+    givenHook({});
+    render(<TodoFlows />);
+
+    await searchFor("milk");
+
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: "milk", page: 1 });
+    expect(window.location.search).toBe("?search=milk");
+  });
+
+  it("keeps the search in the hook call and in the link addresses when a status is chosen", async () => {
+    window.history.replaceState(null, "", "/?search=milk");
+    givenHook({});
+    render(<TodoFlows />);
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute("href", "/?search=milk");
+    expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute(
+      "href",
+      "/?status=active&search=milk",
+    );
+    expect(screen.getByRole("link", { name: "Completed" })).toHaveAttribute(
+      "href",
+      "/?status=completed&search=milk",
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: "Active" }));
+
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "active", search: "milk", page: 1 });
+    expect(searchBox()).toHaveValue("milk");
+    expect(window.location.search).toBe("?status=active&search=milk");
+  });
+
+  it("keeps the selected status when a search is committed", async () => {
+    window.history.replaceState(null, "", "/?status=active");
+    givenHook({});
+    render(<TodoFlows />);
+
+    await searchFor("milk");
+
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "active", search: "milk", page: 1 });
+    expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute("aria-current", "page");
+    expect(window.location.search).toBe("?status=active&search=milk");
+  });
+
+  it("drops the page when a new search is committed", async () => {
+    window.history.replaceState(null, "", "/?page=3");
+    givenHook({});
+    render(<TodoFlows />);
+    expect(useTodos).toHaveBeenCalledWith({ status: "all", search: null, page: 3 });
+
+    await searchFor("milk");
+
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: "milk", page: 1 });
+    expect(window.location.search).toBe("?search=milk");
+  });
+
+  it("never passes an invalid search to the hook, and shows the message", async () => {
+    givenHook({});
+    render(<TodoFlows />);
+
+    await searchFor("   ");
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a search term, or clear the box to see all todos.",
+    );
+    expect(useTodos).not.toHaveBeenCalledWith(
+      expect.objectContaining({ search: expect.any(String) }),
+    );
+    expect(window.location.search).toBe("");
+  });
+
+  it("shows the safe error with Retry for a failed first load of a search, keeps the typed text, and Clear still works", async () => {
+    window.history.replaceState(null, "", "/?search=milk");
+    givenHookBySearch({
+      searched: hookResult({
+        serverState: "initial-failure",
+        error: { type: "NETWORK_ERROR", message: "secret-internal-detail" },
+      }),
+      unsearched: hookResult({ todos: [todo, doneTodo] }),
+    });
+    render(<TodoFlows />);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(screen.queryByText(/secret-internal-detail/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Buy milk")).not.toBeInTheDocument();
+    expect(searchBox()).toHaveValue("milk");
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: null, page: 1 });
+    expect(searchBox()).toHaveValue("");
+    expect(searchBox()).toHaveFocus();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Buy milk")).toBeInTheDocument();
+  });
+
+  it("retries the current search and no other query", async () => {
+    window.history.replaceState(null, "", "/?search=milk");
+    const searched = hookResult({
+      serverState: "initial-failure",
+      error: { type: "NETWORK_ERROR", message: "Offline" },
+    });
+    const unsearched = hookResult({ todos: [todo] });
+    givenHookBySearch({ searched, unsearched });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(searched.refetch).toHaveBeenCalledTimes(1);
+    expect(unsearched.refetch).not.toHaveBeenCalled();
+  });
+
+  it("shows no counts on the status links while a search is committed, and shows them again after Clear", async () => {
+    window.history.replaceState(null, "", "/?search=milk");
+    const withCounts = hookResult({ todos: [todo], counts: { active: 1, completed: 1 } });
+    givenHookBySearch({ searched: withCounts, unsearched: withCounts });
+    render(<TodoFlows />);
+
+    expect(screen.getByRole("link", { name: "All" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Active" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Completed" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(screen.getByRole("link", { name: /^All\s*\(2\)$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Active\s*\(1\)$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Completed\s*\(1\)$/ })).toBeInTheDocument();
+  });
+
+  it.each<{ status: Status; url: string; message: string }>([
+    { status: "all", url: "/?search=milk", message: "No todos match “milk”." },
+    {
+      status: "active",
+      url: "/?status=active&search=milk",
+      message: "No active todos match “milk”.",
+    },
+    {
+      status: "completed",
+      url: "/?status=completed&search=milk",
+      message: "No completed todos match “milk”.",
+    },
+  ])("names the search in the empty message for $status", ({ url, message }) => {
+    window.history.replaceState(null, "", url);
+    givenHook({ serverState: "empty" });
+    render(<TodoFlows />);
+
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByText("No todos yet.")).not.toBeInTheDocument();
+  });
+
+  it("renders the search text in the empty message as text, never as HTML", () => {
+    window.history.replaceState(null, "", "/?search=%3Cb%3Ex%3C%2Fb%3E");
+    givenHook({ serverState: "empty" });
+    const { container } = render(<TodoFlows />);
+
+    expect(screen.getByText("No todos match “<b>x</b>”.")).toBeInTheDocument();
+    expect(container.querySelector("b")).toBeNull();
+  });
+
+  it("shows the empty message of the search and moves focus to it after the last row is deleted", async () => {
+    window.history.replaceState(null, "", "/?search=milk");
+    let current = hookResult({ todos: [todo] });
+    vi.mocked(useTodos).mockImplementation(() => current);
+    vi.mocked(useDeleteTodo).mockReturnValue({
+      remove: vi.fn().mockImplementation(async () => {
+        current = hookResult({ serverState: "empty", todos: [] });
+        return ok(undefined);
+      }),
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete “Buy milk”" }));
+
+    const empty = await screen.findByText("No todos match “milk”.");
+    await waitFor(() => expect(empty).toHaveFocus());
   });
 });
 
