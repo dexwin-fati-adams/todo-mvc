@@ -56,7 +56,12 @@ export function StatusFilter({ status, counts, onSelect, hrefFor }: StatusFilter
             }`}
           >
             {option.label}
-            {count === null ? null : <span className="text-slate-600"> ({count})</span>}
+            {count === null ? null : (
+              <>
+                {" "}
+                <span className="text-slate-600">({count})</span>
+              </>
+            )}
           </a>
         );
       })}
