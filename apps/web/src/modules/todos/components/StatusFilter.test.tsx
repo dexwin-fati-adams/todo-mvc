@@ -10,8 +10,10 @@ function renderFilter(props: Partial<Parameters<typeof StatusFilter>[0]> = {}) {
   return { onSelect };
 }
 
-const link = (name: string) => screen.getByRole("link", { name });
-
+const link = (name: string) =>
+  screen.getByRole("link", {
+    name: (accessible) => accessible.replace(/\s+/g, "").startsWith(name.replace(/\s+/g, "")),
+  });
 describe("StatusFilter", () => {
   it("has a navigation named Filter todos with All, Active, and Completed in that order", () => {
     renderFilter();

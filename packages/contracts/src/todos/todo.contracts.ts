@@ -54,6 +54,9 @@ export type TodoListResponse = z.infer<typeof TodoListResponseSchema>;
 const StatusEnum = z.enum(["all", "active", "completed"]);
 export type Status = z.infer<typeof StatusEnum>;
 
+// The longest search the API accepts. The web app imports this number, so the two can never disagree.
+export const SEARCH_MAX_LENGTH = 100;
+
 // It validates the status, search, page, and pageSize query parameters for
 // GET /todos. status defaults to all, search is optional (non-blank, max 100
 // chars), page defaults to 1, and pageSize defaults to 20 (max 100).
@@ -64,7 +67,7 @@ export const StatusQuerySchema = z
       .string()
       .trim()
       .min(1, "Search cannot be blank")
-      .max(100, "Search must be 100 characters or fewer")
+      .max(SEARCH_MAX_LENGTH, `Search must be ${SEARCH_MAX_LENGTH} characters or fewer`)
       .optional(),
 
     //corce.number() converts the value to a number if possible, otherwise it will throw an error and it fromone type to the other

@@ -34,6 +34,13 @@ export interface TodoRepository {
   deleteCompleted(): ResultAsync<number, TodoDbError>;
 }
 
+//In LIKE and ILIKE, % means "any text", _ means "any one character", and \ is the escape character.
+//A search is plain text typed by a user, so each of those three gets a backslash in front of it.
+//Without this, searching for "_" matches every title.
+function escapeLikePattern(text: string): string {
+  return text.replace(/[\\%_]/g, "\\$&");
+}
+
 export function createTodoRepository(db: Db): TodoRepository {
   function make(tx: Db): TodoRepository {
     return {
@@ -54,7 +61,9 @@ export function createTodoRepository(db: Db): TodoRepository {
           .exhaustive();
 
         //Give me todos matching this status AND containing this search word.
-        const searchCondition = search ? ilike(todosTable.title, `%${search}%`) : undefined;
+        const searchCondition = search
+          ? ilike(todosTable.title, `%${escapeLikePattern(search)}%`)
+          : undefined;
 
         const whereCondition = and(statusCondition, searchCondition);
 

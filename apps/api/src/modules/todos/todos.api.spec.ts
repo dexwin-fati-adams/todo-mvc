@@ -1252,7 +1252,7 @@ test.describe("Status filter controls (browser)", () => {
     await expect(page.getByRole("listitem")).toHaveCount(3);
 
     const link = filterLink(page, "All");
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       await page.keyboard.press("Tab");
       if (await link.evaluate((element) => element === document.activeElement)) {
         break;
@@ -1262,6 +1262,522 @@ test.describe("Status filter controls (browser)", () => {
     await expect(link).toBeFocused();
     // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
     await expect(link).toHaveCSS("outline-width", "2px");
+  });
+});
+
+// M39 browser tests 57 to 72: the search box, together with the All, Active and Completed filter controls.
+// Each test runs against the real API and the real test database.
+test.describe("Search todos (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const CORS = { "access-control-allow-origin": "*" };
+  const MAX_LENGTH = 100;
+  const isTodosList = (url: URL) => url.port === "4001" && url.pathname === "/todos";
+  const requestedSearch = (url: string) => new URL(url).searchParams.get("search");
+  const requestedStatus = (url: string) => new URL(url).searchParams.get("status");
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+
+  async function seedSearchable(request: APIRequestContext) {
+    await createTodo(request, "Buy milk");
+    await createTodo(request, "Write report");
+    const dog = await createTodo(request, "Walk dog");
+    const bottles = await createTodo(request, "Return milk bottles");
+    await request.patch(`/todos/${dog.id}`, { data: { completed: true } });
+    await request.patch(`/todos/${bottles.id}`, { data: { completed: true } });
+  }
+
+  const searchBox = (page: Page) => page.getByRole("searchbox", { name: "Search todos" });
+  const clearButton = (page: Page) => page.getByRole("button", { name: "Clear search" });
+  const rowCheckbox = (page: Page, title: string) => page.getByRole("checkbox", { name: title });
+
+  // The filter links live in a labelled nav. The name starts with the label, because a count may follow it, e.g. "Active (2)".
+  const filterLink = (page: Page, label: "All" | "Active" | "Completed") =>
+    page
+      .getByRole("navigation", { name: "Filter todos" })
+      .getByRole("link", { name: new RegExp(`^${label}`) });
+
+  // 57
+  test("typing milk sends GET /todos with search=milk and shows only the matching todos", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    const searchRequest = page.waitForRequest(
+      (req) => isTodosList(new URL(req.url())) && requestedSearch(req.url()) === "milk",
+    );
+    await searchBox(page).fill("milk");
+    await searchRequest;
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+    await expect(rowCheckbox(page, "Return milk bottles")).toBeVisible();
+    await expect(rowCheckbox(page, "Write report")).toHaveCount(0);
+    await expect(page).toHaveURL(/search=milk/);
+  });
+
+  // 58
+  test("search with Active, and with Completed, shows only that status's matches and sends both params", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+
+    await page.goto(`${WEB_URL}/?status=active`);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    const activeRequest = page.waitForRequest((req) => {
+      const url = req.url();
+      return (
+        isTodosList(new URL(url)) &&
+        requestedSearch(url) === "milk" &&
+        requestedStatus(url) === "active"
+      );
+    });
+    await searchBox(page).fill("milk");
+    await activeRequest;
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+    await expect(rowCheckbox(page, "Return milk bottles")).toHaveCount(0);
+
+    await page.goto(`${WEB_URL}/?status=completed`);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    const completedRequest = page.waitForRequest((req) => {
+      const url = req.url();
+      return (
+        isTodosList(new URL(url)) &&
+        requestedSearch(url) === "milk" &&
+        requestedStatus(url) === "completed"
+      );
+    });
+    await searchBox(page).fill("milk");
+    await completedRequest;
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Return milk bottles")).toBeVisible();
+    await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
+  });
+
+  // 59
+  test("choosing a status keeps the search, and clearing the search keeps the status", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(`${WEB_URL}/?search=milk`);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+
+    await filterLink(page, "Active").click();
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(page).toHaveURL(/search=milk/);
+    await expect(searchBox(page)).toHaveValue("milk");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+
+    await clearButton(page).click();
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(rowCheckbox(page, "Write report")).toBeVisible();
+  });
+
+  // 60
+  test("with ?page=2 in the URL, a new search sends no page and the URL drops page", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(`${WEB_URL}/?page=2`);
+
+    const searchRequests: string[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url())) && requestedSearch(req.url()) !== null) {
+        searchRequests.push(req.url());
+      }
+    });
+    const searchRequest = page.waitForRequest(
+      (req) => isTodosList(new URL(req.url())) && requestedSearch(req.url()) === "milk",
+    );
+    await searchBox(page).fill("milk");
+    await searchRequest;
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(page).toHaveURL(/search=milk/);
+    await expect(page).not.toHaveURL(/page=/);
+    expect(searchRequests.length).toBeGreaterThan(0);
+    for (const url of searchRequests) {
+      expect(new URL(url).searchParams.has("page")).toBe(false);
+    }
+  });
+
+  // 61
+  test("a search with no matches shows the empty message, and Clear brings the list back", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    await searchBox(page).fill("zzz");
+
+    await expect(page.getByText("No todos match “zzz”.")).toBeVisible();
+    await expect(page.getByText("No todos yet.")).toHaveCount(0);
+    await expect(page.getByRole("list")).toHaveCount(0);
+
+    await clearButton(page).click();
+
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+    await expect(page.getByText("No todos match “zzz”.")).toHaveCount(0);
+  });
+
+  // 62
+  test("spaces only, then Enter, sends no search request and shows the message; a too long value does the same", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+    const searchRequests: string[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url())) && requestedSearch(req.url()) !== null) {
+        searchRequests.push(req.url());
+      }
+    });
+
+    await searchBox(page).fill("     ");
+    await searchBox(page).press("Enter");
+
+    await expect(page.getByRole("alert")).toHaveText(
+      "Enter a search term, or clear the box to see all todos.",
+    );
+    await expect(searchBox(page)).toHaveAttribute("aria-invalid", "true");
+
+    await searchBox(page).fill("a".repeat(MAX_LENGTH + 1));
+    await searchBox(page).press("Enter");
+
+    await expect(page.getByRole("alert")).toHaveText(
+      `Search can be at most ${MAX_LENGTH} characters.`,
+    );
+    await page.waitForTimeout(600);
+
+    expect(searchRequests).toEqual([]);
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+  });
+
+  // 63
+  test("Clear removes search from the URL, shows all todos of the status, and sends a request with no search", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(`${WEB_URL}/?search=milk`);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+
+    const clearedRequest = page.waitForRequest(
+      (req) => isTodosList(new URL(req.url())) && requestedSearch(req.url()) === null,
+    );
+    await clearButton(page).click();
+    await clearedRequest;
+
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(searchBox(page)).toHaveValue("");
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+    await expect(clearButton(page)).toHaveCount(0);
+  });
+
+  // 64
+  test("typing milk quickly sends one request with search=milk, and none for m, mi, or mil", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+    const searches: (string | null)[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url())) && requestedSearch(req.url()) !== null) {
+        searches.push(requestedSearch(req.url()));
+      }
+    });
+
+    await searchBox(page).pressSequentially("milk", { delay: 50 });
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    expect(searches).toEqual(["milk"]);
+  });
+
+  // 65
+  test("a slow response for an old search never replaces the list for the current search", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    let releaseOld!: () => void;
+    const oldHeld = new Promise<void>((resolve) => {
+      releaseOld = resolve;
+    });
+    let markOldSent!: () => void;
+    const oldSent = new Promise<void>((resolve) => {
+      markOldSent = resolve;
+    });
+    await page.route(isTodosList, async (route) => {
+      if (requestedSearch(route.request().url()) === "w") {
+        markOldSent();
+        await oldHeld;
+      }
+      await route.continue();
+    });
+
+    await searchBox(page).fill("w");
+    await oldSent;
+    await searchBox(page).fill("wa");
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Walk dog")).toBeVisible();
+
+    const lateResponse = page.waitForResponse(
+      (res) => isTodosList(new URL(res.url())) && requestedSearch(res.url()) === "w",
+    );
+    releaseOld();
+    await lateResponse;
+
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Walk dog")).toBeVisible();
+    await expect(rowCheckbox(page, "Write report")).toHaveCount(0);
+    await expect(searchBox(page)).toHaveValue("wa");
+  });
+
+  // 66
+  test("with the search response held, the old rows are hidden, loading shows, and the box and status links stay usable", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(isTodosList, async (route) => {
+      if (requestedSearch(route.request().url()) === "milk") {
+        await held;
+      }
+      await route.continue();
+    });
+
+    await searchBox(page).fill("milk");
+
+    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("listitem")).toHaveCount(0);
+    await expect(rowCheckbox(page, "Write report")).toHaveCount(0);
+    await expect(searchBox(page)).toHaveValue("milk");
+    await expect(searchBox(page)).toBeEditable();
+
+    await filterLink(page, "Active").click();
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(searchBox(page)).toHaveValue("milk");
+
+    release();
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+  });
+
+  // 67
+  test("a 503 for a search shows the safe message with Retry, keeps the typed text, and Retry shows the rows", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    const failSearch = (route: Route) =>
+      requestedSearch(route.request().url()) === "milk"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodosList, failSearch);
+
+    await searchBox(page).fill("milk");
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(searchBox(page)).toHaveValue("milk");
+    await expect(page.getByRole("listitem")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    await expect(filterLink(page, "All")).toBeVisible();
+
+    await page.unroute(isTodosList, failSearch);
+    await alert.getByRole("button", { name: "Retry" }).click();
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(searchBox(page)).toHaveValue("milk");
+  });
+
+  // 68
+  test("reloading with status and search in the URL restores the box, the status, and the rows, and Back returns to the previous state", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(`${WEB_URL}/?status=active&search=milk`);
+
+    await expect(searchBox(page)).toHaveValue("milk");
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+
+    await page.reload();
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(page).toHaveURL(/search=milk/);
+    await expect(searchBox(page)).toHaveValue("milk");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+
+    await filterLink(page, "Completed").click();
+    await expect(page).toHaveURL(/status=completed/);
+    await expect(rowCheckbox(page, "Return milk bottles")).toBeVisible();
+
+    await page.goBack();
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(page).toHaveURL(/search=milk/);
+    await expect(filterLink(page, "Active")).toHaveAttribute("aria-current", "page");
+    await expect(searchBox(page)).toHaveValue("milk");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
+  });
+
+  // 69
+  test("works with the keyboard only: type, Enter, Tab to Clear, Enter, and focus returns to the box", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    await searchBox(page).focus();
+    await page.keyboard.type("milk");
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+    await expect(page).toHaveURL(/search=milk/);
+
+    await page.keyboard.press("Tab");
+    await expect(clearButton(page)).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(searchBox(page)).toHaveValue("");
+    await expect(searchBox(page)).toBeFocused();
+  });
+
+  // 70
+  test("with a search active the status controls show no counts, and after Clear they match the API", async ({
+    page,
+    request,
+  }) => {
+    await seedSearchable(request);
+    const all = (await (await request.get("/todos")).json()) as TodoListResponse;
+    await page.goto(`${WEB_URL}/?search=milk`);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
+
+    await expect(filterLink(page, "All")).toHaveText("All");
+    await expect(filterLink(page, "Active")).toHaveText("Active");
+    await expect(filterLink(page, "Completed")).toHaveText("Completed");
+
+    await clearButton(page).click();
+
+    await expect(filterLink(page, "All")).toHaveText(
+      `All (${all.activeCount + all.completedCount})`,
+    );
+    await expect(filterLink(page, "Active")).toHaveText(`Active (${all.activeCount})`);
+    await expect(filterLink(page, "Completed")).toHaveText(`Completed (${all.completedCount})`);
+  });
+
+  test("records that the server counts describe all todos and ignore the search", async ({
+    request,
+  }) => {
+    await seedSearchable(request);
+    const all = (await (await request.get("/todos")).json()) as TodoListResponse;
+    const searched = (await (await request.get("/todos?search=milk")).json()) as TodoListResponse;
+
+    expect(searched.todos).toHaveLength(2);
+    expect(searched.activeCount).toBe(all.activeCount);
+    expect(searched.completedCount).toBe(all.completedCount);
+  });
+
+  // 71
+  test("the search box and Clear show a visible focus outline", async ({ page, request }) => {
+    await seedSearchable(request);
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(4);
+
+    const box = searchBox(page);
+    for (let i = 0; i < 10; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await box.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+    }
+    await expect(box).toBeFocused();
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await expect(box).toHaveCSS("outline-width", "2px");
+
+    await page.keyboard.type("milk");
+    await page.keyboard.press("Tab");
+
+    await expect(clearButton(page)).toBeFocused();
+    await expect(clearButton(page)).toHaveCSS("outline-width", "2px");
+  });
+
+  // 72
+  test("%, _, &, and # are matched as plain characters, and % alone does not match every todo", async ({
+    page,
+    request,
+  }) => {
+    await createTodo(request, "Save 50% now");
+    await createTodo(request, "Pay a&b invoice");
+    await createTodo(request, "Item #1");
+    await createTodo(request, "my_var");
+    await createTodo(request, "myXvar");
+    await page.goto(WEB_URL);
+    await expect(page.getByRole("listitem")).toHaveCount(5);
+
+    await searchBox(page).fill("50%");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Save 50% now")).toBeVisible();
+
+    await searchBox(page).fill("a&b");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Pay a&b invoice")).toBeVisible();
+
+    await searchBox(page).fill("#1");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Item #1")).toBeVisible();
+
+    await searchBox(page).fill("%");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "Save 50% now")).toBeVisible();
+
+    await searchBox(page).fill("_");
+    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(rowCheckbox(page, "my_var")).toBeVisible();
+    await expect(rowCheckbox(page, "myXvar")).toHaveCount(0);
   });
 });
 

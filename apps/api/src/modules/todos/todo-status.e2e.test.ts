@@ -160,6 +160,50 @@ describe("GET /todos — search query handling (real app, real database)", () =>
     expect(res.statusCode).toBe(200);
     expect(res.json().todos).toEqual([]);
   });
+
+  //The search is plain text typed by a user. In LIKE, % means "any text", _ means "any one character" and \ is the escape
+  // character, so each one must be matched as itself and not as a pattern.
+  async function addTodo(title: string) {
+    const res = await app.inject({ method: "POST", url: "/todos", payload: { title } });
+    expect(res.statusCode).toBe(201);
+  }
+
+  async function searchTitles(search: string): Promise<string[]> {
+    const res = await app.inject({
+      method: "GET",
+      url: `/todos?search=${encodeURIComponent(search)}`,
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json().todos.map((t: { title: string }) => t.title);
+  }
+
+  it("matches % as a plain percent sign, not as 'any text'", async () => {
+    await addTodo("50% off");
+    await addTodo("Buy milk");
+
+    expect(await searchTitles("%")).toEqual(["50% off"]);
+  });
+
+  it("matches _ as a plain underscore, not as 'any one character'", async () => {
+    await addTodo("my_var");
+    await addTodo("myXvar");
+
+    expect(await searchTitles("_")).toEqual(["my_var"]);
+  });
+
+  it("matches a backslash as a plain backslash", async () => {
+    await addTodo("C:\\temp");
+    await addTodo("Buy milk");
+
+    expect(await searchTitles("\\")).toEqual(["C:\\temp"]);
+  });
+
+  it("still finds a title with no special characters", async () => {
+    await addTodo("Buy milk");
+    await addTodo("Walk the dog");
+
+    expect(await searchTitles("milk")).toEqual(["Buy milk"]);
+  });
 });
 
 describe("GET /todos — pagination query handling (real app, real database)", () => {
