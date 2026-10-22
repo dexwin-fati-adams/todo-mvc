@@ -1330,15 +1330,16 @@ test.describe("Search todos (browser)", () => {
       const url = req.url();
       return (
         isTodosList(new URL(url)) &&
-        requestedSearch(url) === "milk" &&
+        requestedSearch(url) === "active" &&
         requestedStatus(url) === "active"
       );
     });
-    await searchBox(page).fill("milk");
+    await searchBox(page).fill("active");
     await activeRequest;
-    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
     await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
-    await expect(rowCheckbox(page, "Return milk bottles")).toHaveCount(0);
+    await expect(rowCheckbox(page, "Write report")).toBeVisible();
+    await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
 
     await page.goto(`${WEB_URL}/?status=completed`);
     await expect(page.getByRole("listitem")).toHaveCount(2);
@@ -1346,14 +1347,15 @@ test.describe("Search todos (browser)", () => {
       const url = req.url();
       return (
         isTodosList(new URL(url)) &&
-        requestedSearch(url) === "milk" &&
+        requestedSearch(url) === "completed" &&
         requestedStatus(url) === "completed"
       );
     });
-    await searchBox(page).fill("milk");
+    await searchBox(page).fill("completed");
     await completedRequest;
-    await expect(page.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("listitem")).toHaveCount(2);
     await expect(rowCheckbox(page, "Return milk bottles")).toBeVisible();
+    await expect(rowCheckbox(page, "Walk dog")).toBeVisible();
     await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
   });
 
@@ -1753,7 +1755,8 @@ test.describe("Search todos (browser)", () => {
     await createTodo(request, "Save 50% now");
     await createTodo(request, "Pay a&b invoice");
     await createTodo(request, "Item #1");
-    await await createTodo(request, "myXvar");
+    await createTodo(request, "my_var");
+    await createTodo(request, "myXvar");
     await page.goto(WEB_URL);
     await expect(page.getByRole("listitem")).toHaveCount(5);
 

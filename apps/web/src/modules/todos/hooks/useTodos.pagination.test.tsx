@@ -204,7 +204,12 @@ describe("useTodos pagination numbers", () => {
 
     await waitFor(() => expect(result.current.serverState).toBe("ready"));
 
-    expect(result.current.pagination).toEqual({ totalItems: 45, totalPages: 3 });
+    expect(result.current.pagination).toEqual({
+      page: 2,
+      pageSize: 20,
+      totalItems: 45,
+      totalPages: 3,
+    });
   });
 
   it("returns zero items and zero pages for an empty list", async () => {
@@ -213,7 +218,12 @@ describe("useTodos pagination numbers", () => {
 
     await waitFor(() => expect(result.current.serverState).toBe("empty"));
 
-    expect(result.current.pagination).toEqual({ totalItems: 0, totalPages: 0 });
+    expect(result.current.pagination).toEqual({
+      page: 1,
+      pageSize: 20,
+      totalItems: 0,
+      totalPages: 0,
+    });
   });
 
   it("returns the real total pages when the page is past the end and has no rows", async () => {
@@ -222,7 +232,12 @@ describe("useTodos pagination numbers", () => {
 
     await waitFor(() => expect(result.current.serverState).toBe("empty"));
 
-    expect(result.current.pagination).toEqual({ totalItems: 3, totalPages: 2 });
+    expect(result.current.pagination).toEqual({
+      page: 9,
+      pageSize: 10,
+      totalItems: 3,
+      totalPages: 2,
+    });
   });
 
   it("has none when the first load fails", async () => {
@@ -238,7 +253,12 @@ describe("useTodos pagination numbers", () => {
     api.list.mockReturnValue(okAsync(pageOf([todo], { totalItems: 45, totalPages: 3 })));
     const { result, rerender } = render({});
     await waitFor(() =>
-      expect(result.current.pagination).toEqual({ totalItems: 45, totalPages: 3 }),
+      expect(result.current.pagination).toEqual({
+        page: 1,
+        pageSize: 20,
+        totalItems: 45,
+        totalPages: 3,
+      }),
     );
 
     api.list.mockReturnValue(neverResolves());
@@ -258,6 +278,11 @@ describe("useTodos pagination numbers", () => {
 
     await waitFor(() => expect(result.current.serverState).toBe("refresh-failure"));
 
-    expect(result.current.pagination).toEqual({ totalItems: 45, totalPages: 3 });
+    expect(result.current.pagination).toEqual({
+      page: 1,
+      pageSize: 20,
+      totalItems: 45,
+      totalPages: 3,
+    });
   });
 });
