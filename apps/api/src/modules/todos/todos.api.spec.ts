@@ -1330,15 +1330,16 @@ test.describe("Search todos (browser)", () => {
       const url = req.url();
       return (
         isTodosList(new URL(url)) &&
-        requestedSearch(url) === "active" &&
+        requestedSearch(url) === "i" &&
         requestedStatus(url) === "active"
       );
     });
-    await searchBox(page).fill("active");
+    await searchBox(page).fill("i");
     await activeRequest;
     await expect(page.getByRole("listitem")).toHaveCount(2);
     await expect(rowCheckbox(page, "Buy milk")).toBeVisible();
     await expect(rowCheckbox(page, "Write report")).toBeVisible();
+    await expect(rowCheckbox(page, "Return milk bottles")).toHaveCount(0);
     await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
 
     await page.goto(`${WEB_URL}/?status=completed`);
@@ -1347,11 +1348,11 @@ test.describe("Search todos (browser)", () => {
       const url = req.url();
       return (
         isTodosList(new URL(url)) &&
-        requestedSearch(url) === "completed" &&
+        requestedSearch(url) === "k" &&
         requestedStatus(url) === "completed"
       );
     });
-    await searchBox(page).fill("completed");
+    await searchBox(page).fill("k");
     await completedRequest;
     await expect(page.getByRole("listitem")).toHaveCount(2);
     await expect(rowCheckbox(page, "Return milk bottles")).toBeVisible();
