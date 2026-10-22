@@ -47,6 +47,7 @@ describe("buildListUrl", () => {
       status: "completed",
       search: "a&b #1 50%",
       page: 4,
+      pageSize: 20,
       hadInvalid: false,
     });
   });

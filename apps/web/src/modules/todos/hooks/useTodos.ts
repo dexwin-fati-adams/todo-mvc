@@ -30,6 +30,7 @@ export type TodoListQuery = {
   status?: Status;
   search?: string | null;
   page?: number;
+  pageSize?: number;
 };
 
 type ListRequest = NonNullable<Parameters<typeof todoApi.list>[0]>;
@@ -44,11 +45,17 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
     },
   );
 
-function toListRequest(status: Status, search: string | null, page: number): ListRequest {
+function toListRequest(
+  status: Status,
+  search: string | null,
+  page: number,
+  pageSize: number,
+): ListRequest {
   return {
     status,
     ...(search === null ? {} : { search }),
     ...(page > 1 ? { page } : {}),
+    ...(pageSize !== 20 ? { pageSize } : {}),
   };
 }
 
@@ -69,13 +76,25 @@ function deriveServerState(input: {
     .otherwise(() => "ready" as const);
 }
 
+export type TodoPagination = {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+};
+
 //useTodos is a custom React hook that fetches todos from the backend, tracks whether the request is loading/failed/empty/ready,
 //  and gives the UI the todos, the counts, the error, and a way to refresh them.
 //The query key contains the status, so each status has its own result and a new status starts with no rows.
-export function useTodos({ status = "all", search = null, page = 1 }: TodoListQuery = {}) {
+export function useTodos({
+  status = "all",
+  search = null,
+  page = 1,
+  pageSize = 20,
+}: TodoListQuery = {}) {
   const query = useQuery<TodoListResponse, TodoQueryError>({
-    queryKey: ["todos", status, search, page],
-    queryFn: () => unwrap(todoApi.list(toListRequest(status, search, page))),
+    queryKey: ["todos", status, search, page, pageSize],
+    queryFn: () => unwrap(todoApi.list(toListRequest(status, search, page, pageSize))),
   });
 
   const data = query.data;
@@ -94,5 +113,14 @@ export function useTodos({ status = "all", search = null, page = 1 }: TodoListQu
     todos: data?.todos ?? [],
     counts:
       data === undefined ? null : { active: data.activeCount, completed: data.completedCount },
+    pagination:
+      data === undefined
+        ? null
+        : {
+            page,
+            pageSize,
+            totalItems: data.totalItems,
+            totalPages: data.totalPages,
+          },
   };
 }
