@@ -1753,8 +1753,7 @@ test.describe("Search todos (browser)", () => {
     await createTodo(request, "Save 50% now");
     await createTodo(request, "Pay a&b invoice");
     await createTodo(request, "Item #1");
-    await createTodo(request, "my_var");
-    await createTodo(request, "myXvar");
+    await await createTodo(request, "myXvar");
     await page.goto(WEB_URL);
     await expect(page.getByRole("listitem")).toHaveCount(5);
 

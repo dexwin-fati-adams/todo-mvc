@@ -1,16 +1,102 @@
-import { PageSize } from "@/modules/todos/flows/pageSize";
+import { useId, useLayoutEffect, useRef } from "react";
+import { PAGE_SIZE_OPTIONS, type PageSize } from "@/modules/todos/flows/pageSize"; // ADAPT if the constant lives elsewhere
 
 export type PaginationProps = {
   page: number;
-  totalPages: number;
+  totalPages: number | null; // null = no known count yet
   pageSize: PageSize;
-  //onPageSizeChange: Changes how many todos appear on each page.
   onPageChange: (page: number) => void;
-  //onPageSizeChange changes how many todos each page displays.
   onPageSizeChange: (size: PageSize) => void;
 };
 
-export function Pagination(props: PaginationProps) {
-  void props;
-  return null;
+const ring =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
+
+export function Pagination({
+  page,
+  totalPages,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: PaginationProps) {
+  const selectId = useId();
+  const previousRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const focused = useRef<"previous" | "next" | null>(null);
+
+  const pages = totalPages === null ? null : Math.max(totalPages, 1);
+  const previousDisabled = page <= 1;
+  const nextDisabled = pages === null || page >= pages;
+  const text = pages === null ? `Page ${page}` : `Page ${page} of ${pages}`;
+
+  // If the button that had focus just became disabled, move focus to the page text.
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    const lostFocus = (button: HTMLButtonElement | null) =>
+      active === null || active === document.body || active === button;
+
+    const target = focused.current;
+    if (
+      (target === "previous" && previousDisabled && lostFocus(previousRef.current)) ||
+      (target === "next" && nextDisabled && lostFocus(nextRef.current))
+    ) {
+      textRef.current?.focus();
+      focused.current = null;
+    }
+  });
+
+  const track = (which: "previous" | "next") => ({
+    onFocus: () => {
+      focused.current = which;
+    },
+    // A button that is being disabled blurs with no relatedTarget, so only forget on a real move.
+    onBlur: (event: React.FocusEvent) => {
+      if (event.relatedTarget !== null) focused.current = null;
+    },
+  });
+
+  return (
+    <nav aria-label="Pagination" className="mt-4 flex flex-wrap items-center gap-3">
+      <button
+        ref={previousRef}
+        type="button"
+        disabled={previousDisabled}
+        className={ring}
+        {...track("previous")}
+        onClick={() => onPageChange(page - 1)}
+      >
+        Previous page
+      </button>
+      <span ref={textRef} tabIndex={-1} aria-live="polite" className={ring}>
+        {text}
+      </span>
+      <button
+        ref={nextRef}
+        type="button"
+        disabled={nextDisabled}
+        className={ring}
+        {...track("next")}
+        onClick={() => onPageChange(page + 1)}
+      >
+        Next page
+      </button>
+      <label htmlFor={selectId}>Todos per page</label>
+      <select
+        id={selectId}
+        className={ring}
+        value={pageSize}
+        onChange={(event) => {
+          const chosen = PAGE_SIZE_OPTIONS.find((size) => size === Number(event.target.value));
+          if (chosen !== undefined) onPageSizeChange(chosen);
+        }}
+      >
+        {PAGE_SIZE_OPTIONS.map((size) => (
+          <option key={size} value={size}>
+            {size}
+          </option>
+        ))}
+      </select>
+    </nav>
+  );
 }
