@@ -9,8 +9,14 @@ export type PaginationProps = {
   onPageSizeChange: (size: PageSize) => void;
 };
 
+//The ring shows a blue outline around a button when you use the keyboard to focus on it.
 const ring =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
+
+// Same look as the status filter links and the Delete button: slate border, small text.
+const pageButton =
+  "rounded border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-700 " +
+  "hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white";
 
 export function Pagination({
   page,
@@ -57,46 +63,60 @@ export function Pagination({
   });
 
   return (
-    <nav aria-label="Pagination" className="mt-4 flex flex-wrap items-center gap-3">
-      <button
-        ref={previousRef}
-        type="button"
-        disabled={previousDisabled}
-        className={ring}
-        {...track("previous")}
-        onClick={() => onPageChange(page - 1)}
-      >
-        Previous page
-      </button>
-      <span ref={textRef} tabIndex={-1} aria-live="polite" className={ring}>
-        {text}
-      </span>
-      <button
-        ref={nextRef}
-        type="button"
-        disabled={nextDisabled}
-        className={ring}
-        {...track("next")}
-        onClick={() => onPageChange(page + 1)}
-      >
-        Next page
-      </button>
-      <label htmlFor={selectId}>Todos per page</label>
-      <select
-        id={selectId}
-        className={ring}
-        value={pageSize}
-        onChange={(event) => {
-          const chosen = PAGE_SIZE_OPTIONS.find((size) => size === Number(event.target.value));
-          if (chosen !== undefined) onPageSizeChange(chosen);
-        }}
-      >
-        {PAGE_SIZE_OPTIONS.map((size) => (
-          <option key={size} value={size}>
-            {size}
-          </option>
-        ))}
-      </select>
+    <nav
+      aria-label="Pagination"
+      className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3"
+    >
+      <div className="flex items-center gap-3">
+        <button
+          ref={previousRef}
+          type="button"
+          disabled={previousDisabled}
+          className={`${pageButton} ${ring}`}
+          {...track("previous")}
+          onClick={() => onPageChange(page - 1)}
+        >
+          Previous page
+        </button>
+        <span
+          ref={textRef}
+          tabIndex={-1}
+          aria-live="polite"
+          className={`min-w-24 rounded text-center text-sm text-slate-700 ${ring}`}
+        >
+          {text}
+        </span>
+        <button
+          ref={nextRef}
+          type="button"
+          disabled={nextDisabled}
+          className={`${pageButton} ${ring}`}
+          {...track("next")}
+          onClick={() => onPageChange(page + 1)}
+        >
+          Next page
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={selectId} className="text-sm text-slate-700">
+          Todos per page
+        </label>
+        <select
+          id={selectId}
+          className={`rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 ${ring}`}
+          value={pageSize}
+          onChange={(event) => {
+            const chosen = PAGE_SIZE_OPTIONS.find((size) => size === Number(event.target.value));
+            if (chosen !== undefined) onPageSizeChange(chosen);
+          }}
+        >
+          {PAGE_SIZE_OPTIONS.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </div>
     </nav>
   );
 }
