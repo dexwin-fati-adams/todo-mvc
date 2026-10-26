@@ -8,11 +8,13 @@ import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
 import { type PageSize } from "@/modules/todos/flows/pageSize";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
+import { useReplaceTodo } from "@/modules/todos/hooks/useReplaceTodo";
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
 
 vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
 vi.mock("@/modules/todos/hooks/useDeleteTodo");
+vi.mock("@/modules/todos/hooks/useReplaceTodo");
 
 type HookResult = ReturnType<typeof useTodos>;
 type PaginationInfo = NonNullable<HookResult["pagination"]>;
@@ -120,6 +122,10 @@ beforeEach(() => {
   vi.mocked(useToggleTodo).mockReturnValue({ toggle });
   vi.mocked(useDeleteTodo).mockReturnValue({
     remove: vi.fn().mockResolvedValue(ok(undefined)),
+  });
+  vi.mocked(useReplaceTodo).mockReturnValue({
+    replace: vi.fn().mockResolvedValue(ok(todo)),
+    refresh: vi.fn().mockResolvedValue(undefined),
   });
 });
 

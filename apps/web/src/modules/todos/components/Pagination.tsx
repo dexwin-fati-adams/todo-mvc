@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef } from "react";
-import { PAGE_SIZE_OPTIONS, type PageSize } from "@/modules/todos/flows/pageSize"; // ADAPT if the constant lives elsewhere
+import { PAGE_SIZE_OPTIONS, type PageSize } from "@/modules/todos/flows/pageSize";
 
 export type PaginationProps = {
   page: number;
@@ -32,9 +32,11 @@ export function Pagination({
   const focused = useRef<"previous" | "next" | null>(null);
 
   const pages = totalPages === null ? null : Math.max(totalPages, 1);
-  const previousDisabled = page <= 1;
+  //A page past the last page is not valid yet. TodoFlows replaces it, so until then show "Page X" and block Previous.
+  const pastTheEnd = pages !== null && page > pages;
+  const previousDisabled = page <= 1 || pastTheEnd;
   const nextDisabled = pages === null || page >= pages;
-  const text = pages === null ? `Page ${page}` : `Page ${page} of ${pages}`;
+  const text = pages === null || pastTheEnd ? `Page ${page}` : `Page ${page} of ${pages}`;
 
   // If the button that had focus just became disabled, move focus to the page text.
   useLayoutEffect(() => {
