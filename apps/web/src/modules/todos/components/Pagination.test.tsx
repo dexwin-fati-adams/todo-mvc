@@ -113,13 +113,12 @@ describe("Pagination", () => {
     expect(onPageChange).toHaveBeenCalledWith(3);
   });
 
-  it("asks for the previous page when Previous is clicked", async () => {
-    const { onPageChange } = renderBar({ page: 2, totalPages: 5 });
+  it("shows Page X with both buttons disabled when the page is past the last page", () => {
+    renderBar({ page: 9, totalPages: 3 });
 
-    await userEvent.click(previous());
-
-    expect(onPageChange).toHaveBeenCalledTimes(1);
-    expect(onPageChange).toHaveBeenCalledWith(1);
+    expect(screen.getByText("Page 9")).toBeInTheDocument();
+    expect(previous()).toBeDisabled();
+    expect(next()).toBeDisabled();
   });
 
   it("asks for nothing when a disabled button is clicked", async () => {
