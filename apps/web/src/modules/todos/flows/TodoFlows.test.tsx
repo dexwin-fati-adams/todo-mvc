@@ -231,6 +231,60 @@ describe("TodoFlows", () => {
   });
 });
 
+describe("TodoFlows empty messages", () => {
+  it.each<{ name: string; url: string; message: string }>([
+    { name: "all", url: "/", message: "No todos yet." },
+    { name: "active", url: "/?status=active", message: "No todos yet." },
+    { name: "completed", url: "/?status=completed", message: "No completed todos." },
+  ])("shows the right empty message for $name with no search", ({ url, message }) => {
+    window.history.replaceState(null, "", url);
+    givenHook({ serverState: "empty" });
+    render(<TodoFlows />);
+
+    expect(screen.getByText(message)).toBeInTheDocument();
+  });
+
+  it("does not show the completed message on the other filters", () => {
+    window.history.replaceState(null, "", "/?status=active");
+    givenHook({ serverState: "empty" });
+    render(<TodoFlows />);
+
+    expect(screen.queryByText("No completed todos.")).not.toBeInTheDocument();
+  });
+
+  it("shows the completed message when a ready list has no rows", () => {
+    window.history.replaceState(null, "", "/?status=completed");
+    givenHook({ serverState: "ready", todos: [] });
+    render(<TodoFlows />);
+
+    expect(screen.getByText("No completed todos.")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
+
+  it("switches the empty message when the user changes the filter", async () => {
+    givenHookByStatus({
+      all: hookResult({ serverState: "empty" }),
+      completed: hookResult({ serverState: "empty" }),
+    });
+    render(<TodoFlows />);
+    expect(screen.getByText("No todos yet.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "Completed" }));
+
+    expect(screen.getByText("No completed todos.")).toBeInTheDocument();
+    expect(screen.queryByText("No todos yet.")).not.toBeInTheDocument();
+  });
+
+  it("does not show an empty message while the list has rows", () => {
+    window.history.replaceState(null, "", "/?status=completed");
+    givenHook({ todos: [doneTodo] });
+    render(<TodoFlows />);
+
+    expect(screen.queryByText("No completed todos.")).not.toBeInTheDocument();
+    expect(screen.getByText("Walk the dog")).toBeInTheDocument();
+  });
+});
+
 describe("TodoFlows status filter", () => {
   it.each<TodoServerState>([
     "initial-loading",
@@ -552,6 +606,15 @@ describe("TodoFlows search", () => {
 
     expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.queryByText("No todos yet.")).not.toBeInTheDocument();
+  });
+
+  it("names the search in the empty message when a ready list has no rows", () => {
+    window.history.replaceState(null, "", "/?status=active&search=milk");
+    givenHook({ serverState: "ready", todos: [] });
+    render(<TodoFlows />);
+
+    expect(screen.getByText("No active todos match “milk”.")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 
   it("renders the search text in the empty message as text, never as HTML", () => {

@@ -146,6 +146,104 @@ describe("TodoView", () => {
   });
 });
 
+describe("TodoView error messages", () => {
+  it.each<{ name: string; error: ClientError | null; message: string }>([
+    {
+      name: "a network error",
+      error: networkError,
+      message: "We can't reach the server. Check your connection.",
+    },
+    {
+      name: "an API error",
+      error: { type: "API_ERROR", status: 503, message: "secret-internal-detail" },
+      message: "Something went wrong on our side. Please try again.",
+    },
+    {
+      name: "a parse error",
+      error: { type: "PARSE_ERROR", message: "secret-internal-detail" },
+      message: "Something went wrong on our side. Please try again.",
+    },
+    {
+      name: "no error object",
+      error: null,
+      message: "Something went wrong. Please try again.",
+    },
+  ])("shows a safe message for $name", ({ error, message }) => {
+    renderView({ state: "initial-failure", todos: [], error });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(message);
+    expect(screen.queryByText(/secret-internal-detail/)).not.toBeInTheDocument();
+  });
+});
+
+describe("TodoView empty message", () => {
+  it("shows the custom empty message in the empty state instead of the default", () => {
+    renderView({ state: "empty", todos: [], emptyMessage: "No completed todos." });
+
+    expect(screen.getByText("No completed todos.")).toBeInTheDocument();
+    expect(screen.queryByText(/no todos yet/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
+
+  it("shows the custom empty message when a ready list has no rows", () => {
+    renderView({ state: "ready", todos: [], emptyMessage: "No todos match “milk”." });
+
+    expect(screen.getByText("No todos match “milk”.")).toBeInTheDocument();
+    expect(screen.queryByText(/no todos yet/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the default message when no custom message is given", () => {
+    renderView({ state: "ready", todos: [] });
+
+    expect(screen.getByText("No todos yet.")).toBeInTheDocument();
+  });
+
+  it("does not show the custom empty message when the list has rows", () => {
+    renderView({ emptyMessage: "No completed todos." });
+
+    expect(screen.queryByText("No completed todos.")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("renders the custom empty message as plain text, never as HTML", () => {
+    const { container } = renderView({
+      state: "empty",
+      todos: [],
+      emptyMessage: "No todos match “<b>x</b>”.",
+    });
+
+    expect(screen.getByText("No todos match “<b>x</b>”.")).toBeInTheDocument();
+    expect(container.querySelector("b")).toBeNull();
+  });
+
+  it("keeps the delete notice and shows the custom empty message together", () => {
+    renderView({
+      state: "empty",
+      todos: [],
+      emptyMessage: "No active todos match “milk”.",
+      deleting: deletingProps({ notice: "Deleted “Buy milk”." }),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Deleted “Buy milk”.");
+    expect(screen.getByText("No active todos match “milk”.")).toBeInTheDocument();
+  });
+
+  it("makes the custom empty message the focus fallback when wired for deleting", () => {
+    const deleting = deletingProps();
+    renderView({
+      state: "empty",
+      todos: [],
+      emptyMessage: "No completed todos.",
+      deleting,
+    });
+
+    const message = screen.getByText("No completed todos.");
+    expect(message).toHaveAttribute("tabindex", "-1");
+    expect(deleting.setFocusTarget).toHaveBeenCalledWith(message);
+  });
+});
+
 describe("TodoView completion checkbox", () => {
   it("passes onToggle through to the row checkbox", async () => {
     const { onToggle } = renderView();
@@ -625,6 +723,23 @@ describe("TodoView accessibility", () => {
       props: { state: "initial-failure", todos: [], error: networkError },
     },
     { name: "empty", props: { state: "empty", todos: [] } },
+    {
+      name: "empty with a custom message",
+      props: { state: "empty", todos: [], emptyMessage: "No completed todos." },
+    },
+    {
+      name: "ready with no rows and a custom message",
+      props: { state: "ready", todos: [], emptyMessage: "No todos match “milk”." },
+    },
+    {
+      name: "empty with a custom message, wired for deleting",
+      props: {
+        state: "empty",
+        todos: [],
+        emptyMessage: "No completed todos.",
+        deleting: deletingProps(),
+      },
+    },
     { name: "ready", props: { state: "ready" } },
     { name: "refreshing", props: { state: "refreshing" } },
     { name: "refresh-failure", props: { state: "refresh-failure", error: networkError } },

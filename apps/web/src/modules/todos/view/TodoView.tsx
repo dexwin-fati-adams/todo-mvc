@@ -4,7 +4,8 @@ import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
 import type { ClientError } from "@/api/todos/todo.api";
 import { TodoList } from "@/modules/todos/components/TodoList";
-import type { TodoEditing } from "@/modules/todos/components/TodoItem";
+import type { TodoDeleting, TodoEditing } from "@/modules/todos/components/TodoItem";
+
 export type TodoViewProps = {
   state: TodoServerState;
   todos: Todo[];

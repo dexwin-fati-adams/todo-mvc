@@ -12,6 +12,7 @@ import { useListParams } from "@/modules/todos/flows/useListParams";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useTodoDeleteFlow } from "@/modules/todos/flows/TodoDeleteFlow";
+import { useTodoEditFlow } from "@/modules/todos/flows/useTodoEditFlow";
 import { TodoView } from "@/modules/todos/view/TodoView";
 
 const STALE_MESSAGE = "This todo no longer exists. The list has been refreshed.";
@@ -153,6 +154,8 @@ export function TodoFlows() {
     clearRowMessage,
   });
 
+  const editing = useTodoEditFlow({ todos });
+
   const start = (todo: Todo) => {
     pendingRef.current.add(todo.id);
     setPendingIds(new Set(pendingRef.current));
@@ -200,11 +203,17 @@ export function TodoFlows() {
         onToggle={onToggle}
         pendingIds={pendingIds}
         rowMessages={rowMessages}
+        editing={editing}
         deleting={deleting}
         emptyMessage={emptyMessageFor(status, search)}
       />
       {visibleNotice !== null && (
-        <p ref={noticeRef} role="status" tabIndex={-1}>
+        <p
+          ref={noticeRef}
+          role="status"
+          tabIndex={-1}
+          className="m-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+        >
           {visibleNotice}
         </p>
       )}
