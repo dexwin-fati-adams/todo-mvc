@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Pagination, type PaginationProps } from "@/modules/todos/components/Pagination";
-import { PageSize } from "@/modules/todos/flows/pageSize";
+import { type PageSize } from "@/modules/todos/flows/pageSize";
 
 function renderBar(props: Partial<PaginationProps> = {}) {
   const onPageChange = vi.fn<(page: number) => void>();
@@ -104,6 +104,31 @@ describe("Pagination", () => {
     expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
   });
 
+  it("shows Page X with both buttons disabled when the page is past the last page", () => {
+    renderBar({ page: 9, totalPages: 3 });
+
+    expect(screen.getByText("Page 9")).toBeInTheDocument();
+    expect(previous()).toBeDisabled();
+    expect(next()).toBeDisabled();
+  });
+
+  it("shows Page X, enables Previous, and disables Next when the page count is not known yet", () => {
+    renderBar({ page: 3, totalPages: null });
+
+    expect(screen.getByText("Page 3")).toBeInTheDocument();
+    expect(previous()).toBeEnabled();
+    expect(next()).toBeDisabled();
+    expect(sizeSelect()).toBeEnabled();
+  });
+
+  it("disables Previous too on page 1 when the page count is not known yet", () => {
+    renderBar({ page: 1, totalPages: null });
+
+    expect(screen.getByText("Page 1")).toBeInTheDocument();
+    expect(previous()).toBeDisabled();
+    expect(next()).toBeDisabled();
+  });
+
   it("asks for the next page when Next is clicked", async () => {
     const { onPageChange } = renderBar({ page: 2, totalPages: 5 });
 
@@ -113,12 +138,13 @@ describe("Pagination", () => {
     expect(onPageChange).toHaveBeenCalledWith(3);
   });
 
-  it("shows Page X with both buttons disabled when the page is past the last page", () => {
-    renderBar({ page: 9, totalPages: 3 });
+  it("asks for the previous page when Previous is clicked", async () => {
+    const { onPageChange } = renderBar({ page: 2, totalPages: 5 });
 
-    expect(screen.getByText("Page 9")).toBeInTheDocument();
-    expect(previous()).toBeDisabled();
-    expect(next()).toBeDisabled();
+    await userEvent.click(previous());
+
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenCalledWith(1);
   });
 
   it("asks for nothing when a disabled button is clicked", async () => {
@@ -206,5 +232,21 @@ describe("Pagination", () => {
 
     expect(previous()).toBeDisabled();
     expect(screen.getByText("Page 1 of 5")).toHaveFocus();
+  });
+
+  it("does not move focus when a button becomes disabled but focus is somewhere else", () => {
+    const props = {
+      totalPages: 5,
+      pageSize: 20 as PageSize,
+      onPageChange: vi.fn(),
+      onPageSizeChange: vi.fn(),
+    };
+    const { rerender } = render(<Pagination page={4} {...props} />);
+    sizeSelect().focus();
+
+    rerender(<Pagination page={5} {...props} />);
+
+    expect(next()).toBeDisabled();
+    expect(sizeSelect()).toHaveFocus();
   });
 });

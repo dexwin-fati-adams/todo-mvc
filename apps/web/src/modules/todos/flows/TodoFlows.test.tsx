@@ -5,6 +5,7 @@ import type { Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
+import { type PageSize } from "@/modules/todos/flows/pageSize";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
@@ -65,7 +66,7 @@ function givenHookBySearch(results: { searched: HookResult; unsearched: HookResu
 }
 
 //Gives each page its own hook result, the way the real hook has one result per page.
-function givenHookByPage(byPage: (page: number, pageSize: number) => HookResult) {
+function givenHookByPage(byPage: (page: number, pageSize: PageSize) => HookResult) {
   vi.mocked(useTodos).mockImplementation((query) =>
     byPage(query?.page ?? 1, query?.pageSize ?? 20),
   );
@@ -74,7 +75,7 @@ function givenHookByPage(byPage: (page: number, pageSize: number) => HookResult)
 function pageInfo(
   page: number,
   totalPages: number,
-  options: { totalItems?: number; pageSize?: number } = {},
+  options: { totalItems?: number; pageSize?: PageSize } = {},
 ): PaginationInfo {
   return {
     page,
@@ -1123,7 +1124,6 @@ describe("TodoFlows pagination", () => {
   });
 
   it("drops the last known page count when the status changes, so Next is disabled until the response arrives", async () => {
-    givenHookByPage((page) => hookResult({ todos: [todo], pagination: pageInfo(page, 3) }));
     givenHookByStatus({
       all: hookResult({ todos: [todo], pagination: pageInfo(1, 3) }),
       active: hookResult({ serverState: "initial-loading", todos: [], pagination: null }),

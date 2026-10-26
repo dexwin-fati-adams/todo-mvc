@@ -76,20 +76,29 @@ export function TodoFlows() {
   const lastKnownPages = useLastPagination(listKey, pagination?.totalPages ?? null);
   const totalPages = pagination?.totalPages ?? lastKnownPages;
 
+  //notice shows a message to the user when they request a page that does not exist.
   const [notice, setNotice] = useState<Notice | null>(null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const needsNoticeFocus = useRef(false);
   const viewKey = JSON.stringify([status, search, pageSize, page]);
 
+  //Plain values for the recovery effect, so its dependency list is complete and honest.
+  const rowCount = todos.length;
+  const loadedPage = pagination?.page ?? null;
+  const loadedTotalItems = pagination?.totalItems ?? 0;
+  const loadedTotalPages = pagination?.totalPages ?? 0;
+
+  //Out-of-range recovery. It acts only on an empty response that belongs to the page that was asked for.
+  //resolvePage never returns the page it was given, so the recovery cannot loop.
   useEffect(() => {
-    if (serverState !== "empty" || pagination === null || pagination.page !== page) {
+    if (serverState !== "empty" || loadedPage !== page) {
       return;
     }
 
     const decision = resolvePage(page, {
-      rowCount: todos.length,
-      totalItems: pagination.totalItems,
-      totalPages: pagination.totalPages,
+      rowCount,
+      totalItems: loadedTotalItems,
+      totalPages: loadedTotalPages,
     });
 
     match(decision)
@@ -103,7 +112,18 @@ export function TodoFlows() {
         goToPage(target, { replace: true });
       })
       .exhaustive();
-  }, [serverState, pagination, page]);
+  }, [
+    serverState,
+    loadedPage,
+    page,
+    rowCount,
+    loadedTotalItems,
+    loadedTotalPages,
+    status,
+    search,
+    pageSize,
+    goToPage,
+  ]);
 
   const visibleNotice = notice?.forView === viewKey ? notice.text : null;
 

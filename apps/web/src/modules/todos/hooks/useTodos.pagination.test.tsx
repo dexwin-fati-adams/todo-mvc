@@ -159,7 +159,7 @@ describe("useTodos page size", () => {
     const { result, rerender } = render({});
     await waitFor(() => expect(result.current.todos).toEqual([todo, doneTodo]));
     api.list.mockReturnValue(okAsync(pageOf([todo], { totalItems: 2, totalPages: 2 })));
-    rerender({ pageSize: 1 });
+    rerender({ pageSize: 10 });
     await waitFor(() => expect(result.current.todos).toEqual([todo]));
 
     api.list.mockReturnValue(neverResolves());

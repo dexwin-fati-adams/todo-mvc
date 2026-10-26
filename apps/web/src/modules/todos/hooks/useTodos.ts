@@ -3,6 +3,7 @@ import type { ResultAsync } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Status, TodoListResponse } from "contracts";
 import { formatError, todoApi, type ClientError } from "@/api/todos/todo.api";
+import { DEFAULT_PAGE_SIZE, type PageSize } from "@/modules/todos/flows/pageSize";
 
 ///This code defines all the possible todo loading states and creates a special error type
 // that keeps the original API error while giving it a readable message.
@@ -30,7 +31,14 @@ export type TodoListQuery = {
   status?: Status;
   search?: string | null;
   page?: number;
-  pageSize?: number;
+  pageSize?: PageSize;
+};
+
+export type TodoPagination = {
+  page: number;
+  pageSize: PageSize;
+  totalItems: number;
+  totalPages: number;
 };
 
 type ListRequest = NonNullable<Parameters<typeof todoApi.list>[0]>;
@@ -45,17 +53,18 @@ const unwrap = <T>(result: ResultAsync<T, ClientError>): Promise<T> =>
     },
   );
 
+//The request leaves out search, page, and pageSize when they have their default values.
 function toListRequest(
   status: Status,
   search: string | null,
   page: number,
-  pageSize: number,
+  pageSize: PageSize,
 ): ListRequest {
   return {
     status,
     ...(search === null ? {} : { search }),
     ...(page > 1 ? { page } : {}),
-    ...(pageSize !== 20 ? { pageSize } : {}),
+    ...(pageSize !== DEFAULT_PAGE_SIZE ? { pageSize } : {}),
   };
 }
 
@@ -76,21 +85,15 @@ function deriveServerState(input: {
     .otherwise(() => "ready" as const);
 }
 
-export type TodoPagination = {
-  page: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-};
-
 //useTodos is a custom React hook that fetches todos from the backend, tracks whether the request is loading/failed/empty/ready,
-//  and gives the UI the todos, the counts, the error, and a way to refresh them.
-//The query key contains the status, so each status has its own result and a new status starts with no rows.
+//  and gives the UI the todos, the counts, the pagination, the error, and a way to refresh them.
+//The query key contains the status, the search, the page, and the page size,
+//so each combination has its own result and a new one starts with no rows.
 export function useTodos({
   status = "all",
   search = null,
   page = 1,
-  pageSize = 20,
+  pageSize = DEFAULT_PAGE_SIZE,
 }: TodoListQuery = {}) {
   const query = useQuery<TodoListResponse, TodoQueryError>({
     queryKey: ["todos", status, search, page, pageSize],
@@ -98,6 +101,16 @@ export function useTodos({
   });
 
   const data = query.data;
+
+  const pagination: TodoPagination | null =
+    data === undefined
+      ? null
+      : {
+          page,
+          pageSize,
+          totalItems: data.totalItems,
+          totalPages: data.totalPages,
+        };
 
   return {
     serverState: deriveServerState({
@@ -113,14 +126,6 @@ export function useTodos({
     todos: data?.todos ?? [],
     counts:
       data === undefined ? null : { active: data.activeCount, completed: data.completedCount },
-    pagination:
-      data === undefined
-        ? null
-        : {
-            page,
-            pageSize,
-            totalItems: data.totalItems,
-            totalPages: data.totalPages,
-          },
+    pagination,
   };
 }
