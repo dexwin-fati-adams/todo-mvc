@@ -71,9 +71,9 @@ function send(path: string, init: RequestInit = {}): ResultAsync<Response, Clien
 function request<T>(
   path: string,
   schema: z.ZodType<T>,
-  init: RequestInit = {},
+  body: RequestInit = {},
 ): ResultAsync<T, ClientError> {
-  return send(path, init).andThen((res) =>
+  return send(path, body).andThen((res) =>
     ResultAsync.fromPromise(res.json(), (): ClientError => ({
       type: "PARSE_ERROR",
       message: "Failed to parse response body",
