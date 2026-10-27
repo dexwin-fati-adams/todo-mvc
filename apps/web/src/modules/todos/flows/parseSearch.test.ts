@@ -83,6 +83,7 @@ describe("parseListParams together", () => {
       status: "active",
       search: "milk",
       page: 3,
+      pageSize: 20,
       hadInvalid: false,
     });
   });

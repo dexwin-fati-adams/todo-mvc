@@ -183,9 +183,9 @@ describe("useTodos query identity", () => {
     expect(keys).toHaveLength(3);
     expect(keys).toEqual(
       expect.arrayContaining([
-        ["todos", "all", null, 1],
-        ["todos", "active", null, 1],
-        ["todos", "completed", null, 1],
+        ["todos", "all", null, 1, 20],
+        ["todos", "active", null, 1, 20],
+        ["todos", "completed", null, 1, 20],
       ]),
     );
   });
@@ -288,10 +288,10 @@ describe("useTodos search and page", () => {
     expect(keys).toHaveLength(4);
     expect(keys).toEqual(
       expect.arrayContaining([
-        ["todos", "all", null, 1],
-        ["todos", "all", "milk", 1],
-        ["todos", "active", "milk", 1],
-        ["todos", "active", "milk", 2],
+        ["todos", "all", null, 1, 20],
+        ["todos", "all", "milk", 1, 20],
+        ["todos", "active", "milk", 1, 20],
+        ["todos", "active", "milk", 2, 20],
       ]),
     );
   });
@@ -343,7 +343,7 @@ describe("useTodos search and page", () => {
 
     late.resolve(listOf([doneTodo]));
     await waitFor(() =>
-      expect(queryClient.getQueryData(["todos", "all", "a", 1])).toEqual(listOf([doneTodo])),
+      expect(queryClient.getQueryData(["todos", "all", "a", 1, 20])).toEqual(listOf([doneTodo])),
     );
 
     expect(result.current.todos).toEqual([todo]);

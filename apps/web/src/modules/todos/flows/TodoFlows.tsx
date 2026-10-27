@@ -1,14 +1,18 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { match, P } from "ts-pattern";
 import { SEARCH_MAX_LENGTH, type Status, type Todo } from "contracts";
 import type { ClientError } from "@/api/todos/todo.api";
+import { Pagination } from "@/modules/todos/components/Pagination";
 import { SearchBox } from "@/modules/todos/components/SearchBox";
 import { StatusFilter } from "@/modules/todos/components/StatusFilter";
 import { buildListUrl } from "@/modules/todos/flows/buildListUrl";
+import { resolvePage } from "@/modules/todos/flows/resolvePage";
+import { useLastPagination } from "@/modules/todos/flows/useLastPagination";
 import { useListParams } from "@/modules/todos/flows/useListParams";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useTodoDeleteFlow } from "@/modules/todos/flows/TodoDeleteFlow";
+import { useTodoEditFlow } from "@/modules/todos/flows/useTodoEditFlow";
 import { TodoView } from "@/modules/todos/view/TodoView";
 
 const STALE_MESSAGE = "This todo no longer exists. The list has been refreshed.";
@@ -49,14 +53,92 @@ function emptyMessageFor(status: Status, search: string | null): string | undefi
     .exhaustive();
 }
 
+//The recovery message belongs to the view it sent the user to.
+//It shows only while the user is still on that view, so changing page, size, status, or search hides it.
+type Notice = { forView: string; text: string };
+
 export function TodoFlows() {
   //The selected status lives in the page address, so a reload, Back, and a shared link all keep it.
-  const { status, search, page, selectStatus, commitSearch } = useListParams();
-  const { serverState, todos, counts, error, refetch } = useTodos({ status, search, page });
+  const { status, search, page, pageSize, selectStatus, commitSearch, goToPage, changePageSize } =
+    useListParams();
+  const { serverState, todos, counts, pagination, error, refetch } = useTodos({
+    status,
+    search,
+    page,
+    pageSize,
+  });
   const { toggle } = useToggleTodo();
   const pendingRef = useRef(new Set<string>());
   const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(new Set());
   const [rowMessages, setRowMessages] = useState<Readonly<Record<string, string>>>({});
+
+  //The bar keeps the last known page count while another page of the same list loads.
+  const listKey = JSON.stringify([status, search, pageSize]);
+  const lastKnownPages = useLastPagination(listKey, pagination?.totalPages ?? null);
+  const totalPages = pagination?.totalPages ?? lastKnownPages;
+
+  //notice shows a message to the user when they request a page that does not exist.
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const needsNoticeFocus = useRef(false);
+  const viewKey = JSON.stringify([status, search, pageSize, page]);
+
+  //Plain values for the recovery effect, so its dependency list is complete and honest.
+  const rowCount = todos.length;
+  const loadedPage = pagination?.page ?? null;
+  const loadedTotalItems = pagination?.totalItems ?? 0;
+  const loadedTotalPages = pagination?.totalPages ?? 0;
+
+  //Out-of-range recovery. It acts only on an empty response that belongs to the page that was asked for.
+  //resolvePage never returns the page it was given, so the recovery cannot loop.
+  useEffect(() => {
+    if (serverState !== "empty" || loadedPage !== page) {
+      return;
+    }
+
+    const decision = resolvePage(page, {
+      rowCount,
+      totalItems: loadedTotalItems,
+      totalPages: loadedTotalPages,
+    });
+
+    match(decision)
+      .with({ kind: "ok" }, () => undefined)
+      .with({ kind: "clamp" }, { kind: "reset" }, ({ page: target }) => {
+        setNotice({
+          forView: JSON.stringify([status, search, pageSize, target]),
+          text: `Page ${page} does not exist. Showing page ${target}.`,
+        });
+        needsNoticeFocus.current = true;
+        goToPage(target, { replace: true });
+      })
+      .exhaustive();
+  }, [
+    serverState,
+    loadedPage,
+    page,
+    rowCount,
+    loadedTotalItems,
+    loadedTotalPages,
+    status,
+    search,
+    pageSize,
+    goToPage,
+  ]);
+
+  const visibleNotice = notice?.forView === viewKey ? notice.text : null;
+
+  //If the delete or toggle that emptied the page also dropped focus, give it to the message.
+  useEffect(() => {
+    if (
+      visibleNotice !== null &&
+      needsNoticeFocus.current &&
+      document.activeElement === document.body
+    ) {
+      noticeRef.current?.focus();
+      needsNoticeFocus.current = false;
+    }
+  });
 
   const clearRowMessage = (id: string) => {
     setRowMessages((previous) => withoutKey(previous, id));
@@ -71,6 +153,8 @@ export function TodoFlows() {
     setRowMessage,
     clearRowMessage,
   });
+
+  const editing = useTodoEditFlow({ todos });
 
   const start = (todo: Todo) => {
     pendingRef.current.add(todo.id);
@@ -99,6 +183,7 @@ export function TodoFlows() {
       status: next,
       search,
       page: 1,
+      pageSize,
     });
 
   return (
@@ -118,8 +203,26 @@ export function TodoFlows() {
         onToggle={onToggle}
         pendingIds={pendingIds}
         rowMessages={rowMessages}
+        editing={editing}
         deleting={deleting}
         emptyMessage={emptyMessageFor(status, search)}
+      />
+      {visibleNotice !== null && (
+        <p
+          ref={noticeRef}
+          role="status"
+          tabIndex={-1}
+          className="m-0 border-t border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+        >
+          {visibleNotice}
+        </p>
+      )}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        pageSize={pageSize}
+        onPageChange={(next) => goToPage(next)}
+        onPageSizeChange={changePageSize}
       />
     </>
   );

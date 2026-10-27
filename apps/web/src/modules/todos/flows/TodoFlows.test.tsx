@@ -5,15 +5,19 @@ import type { Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
+import { type PageSize } from "@/modules/todos/flows/pageSize";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
+import { useReplaceTodo } from "@/modules/todos/hooks/useReplaceTodo";
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
 
 vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
 vi.mock("@/modules/todos/hooks/useDeleteTodo");
+vi.mock("@/modules/todos/hooks/useReplaceTodo");
 
 type HookResult = ReturnType<typeof useTodos>;
+type PaginationInfo = NonNullable<HookResult["pagination"]>;
 type ToggleOutcome = Result<Todo, ClientError>;
 
 const todo: Todo = {
@@ -39,6 +43,7 @@ function hookResult(overrides: Partial<HookResult>): HookResult {
     refetch: vi.fn(),
     todos: [],
     counts: null,
+    pagination: null,
     ...overrides,
   };
 }
@@ -62,6 +67,33 @@ function givenHookBySearch(results: { searched: HookResult; unsearched: HookResu
   );
 }
 
+//Gives each page its own hook result, the way the real hook has one result per page.
+function givenHookByPage(byPage: (page: number, pageSize: PageSize) => HookResult) {
+  vi.mocked(useTodos).mockImplementation((query) =>
+    byPage(query?.page ?? 1, query?.pageSize ?? 20),
+  );
+}
+
+function pageInfo(
+  page: number,
+  totalPages: number,
+  options: { totalItems?: number; pageSize?: PageSize } = {},
+): PaginationInfo {
+  return {
+    page,
+    pageSize: options.pageSize ?? 20,
+    totalItems: options.totalItems ?? totalPages * 20,
+    totalPages,
+  };
+}
+
+//A list with a fixed number of pages. Every page has a row, and the metadata follows the page that was asked for.
+function givenPages(totalPages: number) {
+  givenHookByPage((page, pageSize) =>
+    hookResult({ todos: [todo], pagination: pageInfo(page, totalPages, { pageSize }) }),
+  );
+}
+
 //Makes the next toggle() call wait until release() is called, so a test can look at the pending state.
 function holdNextToggle() {
   let release!: (outcome: ToggleOutcome) => void;
@@ -74,6 +106,9 @@ function holdNextToggle() {
 }
 
 const searchBox = () => screen.getByRole("searchbox", { name: "Search todos" });
+const previousButton = () => screen.getByRole("button", { name: "Previous page" });
+const nextButton = () => screen.getByRole("button", { name: "Next page" });
+const sizeSelect = () => screen.getByRole("combobox", { name: "Todos per page" });
 
 async function searchFor(text: string) {
   await userEvent.type(searchBox(), `${text}{Enter}`);
@@ -87,6 +122,10 @@ beforeEach(() => {
   vi.mocked(useToggleTodo).mockReturnValue({ toggle });
   vi.mocked(useDeleteTodo).mockReturnValue({
     remove: vi.fn().mockResolvedValue(ok(undefined)),
+  });
+  vi.mocked(useReplaceTodo).mockReturnValue({
+    replace: vi.fn().mockResolvedValue(ok(todo)),
+    refresh: vi.fn().mockResolvedValue(undefined),
   });
 });
 
@@ -152,21 +191,36 @@ describe("TodoFlows", () => {
   it("asks the hook for all todos by default", () => {
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith({ status: "all", search: null, page: 1 });
+    expect(useTodos).toHaveBeenCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
   });
 
   it("passes the status from the page address to the hook", () => {
     window.history.replaceState(null, "", "/?status=active");
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith({ status: "active", search: null, page: 1 });
+    expect(useTodos).toHaveBeenCalledWith({
+      status: "active",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
   });
 
   it("asks the hook for all todos when the address has an unknown status", () => {
     window.history.replaceState(null, "", "/?status=bogus");
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith({ status: "all", search: null, page: 1 });
+    expect(useTodos).toHaveBeenCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
     expect(useTodos).not.toHaveBeenCalledWith(expect.objectContaining({ status: "bogus" }));
   });
 
@@ -180,6 +234,60 @@ describe("TodoFlows", () => {
   ])("renders without crashing for %s", (serverState) => {
     givenHook({ serverState });
     expect(() => render(<TodoFlows />)).not.toThrow();
+  });
+});
+
+describe("TodoFlows empty messages", () => {
+  it.each<{ name: string; url: string; message: string }>([
+    { name: "all", url: "/", message: "No todos yet." },
+    { name: "active", url: "/?status=active", message: "No todos yet." },
+    { name: "completed", url: "/?status=completed", message: "No completed todos." },
+  ])("shows the right empty message for $name with no search", ({ url, message }) => {
+    window.history.replaceState(null, "", url);
+    givenHook({ serverState: "empty" });
+    render(<TodoFlows />);
+
+    expect(screen.getByText(message)).toBeInTheDocument();
+  });
+
+  it("does not show the completed message on the other filters", () => {
+    window.history.replaceState(null, "", "/?status=active");
+    givenHook({ serverState: "empty" });
+    render(<TodoFlows />);
+
+    expect(screen.queryByText("No completed todos.")).not.toBeInTheDocument();
+  });
+
+  it("shows the completed message when a ready list has no rows", () => {
+    window.history.replaceState(null, "", "/?status=completed");
+    givenHook({ serverState: "ready", todos: [] });
+    render(<TodoFlows />);
+
+    expect(screen.getByText("No completed todos.")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
+
+  it("switches the empty message when the user changes the filter", async () => {
+    givenHookByStatus({
+      all: hookResult({ serverState: "empty" }),
+      completed: hookResult({ serverState: "empty" }),
+    });
+    render(<TodoFlows />);
+    expect(screen.getByText("No todos yet.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "Completed" }));
+
+    expect(screen.getByText("No completed todos.")).toBeInTheDocument();
+    expect(screen.queryByText("No todos yet.")).not.toBeInTheDocument();
+  });
+
+  it("does not show an empty message while the list has rows", () => {
+    window.history.replaceState(null, "", "/?status=completed");
+    givenHook({ todos: [doneTodo] });
+    render(<TodoFlows />);
+
+    expect(screen.queryByText("No completed todos.")).not.toBeInTheDocument();
+    expect(screen.getByText("Walk the dog")).toBeInTheDocument();
   });
 });
 
@@ -218,17 +326,37 @@ describe("TodoFlows status filter", () => {
   it("asks the hook for the status of the link the user clicks", async () => {
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: null, page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
 
     await userEvent.click(screen.getByRole("link", { name: "Active" }));
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "active", search: null, page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "active",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
     expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute("aria-current", "page");
 
     await userEvent.click(screen.getByRole("link", { name: "Completed" }));
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "completed", search: null, page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "completed",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
 
     await userEvent.click(screen.getByRole("link", { name: "All" }));
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: null, page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
   });
 
   it("shows no rows from the previous filter while the new filter is loading", async () => {
@@ -312,7 +440,12 @@ describe("TodoFlows search", () => {
 
     await searchFor("milk");
 
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: "milk", page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: "milk",
+      page: 1,
+      pageSize: 20,
+    });
     expect(window.location.search).toBe("?search=milk");
   });
 
@@ -332,7 +465,12 @@ describe("TodoFlows search", () => {
 
     await userEvent.click(screen.getByRole("link", { name: "Active" }));
 
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "active", search: "milk", page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "active",
+      search: "milk",
+      page: 1,
+      pageSize: 20,
+    });
     expect(searchBox()).toHaveValue("milk");
     expect(window.location.search).toBe("?status=active&search=milk");
   });
@@ -344,7 +482,12 @@ describe("TodoFlows search", () => {
 
     await searchFor("milk");
 
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "active", search: "milk", page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "active",
+      search: "milk",
+      page: 1,
+      pageSize: 20,
+    });
     expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute("aria-current", "page");
     expect(window.location.search).toBe("?status=active&search=milk");
   });
@@ -353,11 +496,21 @@ describe("TodoFlows search", () => {
     window.history.replaceState(null, "", "/?page=3");
     givenHook({});
     render(<TodoFlows />);
-    expect(useTodos).toHaveBeenCalledWith({ status: "all", search: null, page: 3 });
+    expect(useTodos).toHaveBeenCalledWith({
+      status: "all",
+      search: null,
+      page: 3,
+      pageSize: 20,
+    });
 
     await searchFor("milk");
 
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: "milk", page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: "milk",
+      page: 1,
+      pageSize: 20,
+    });
     expect(window.location.search).toBe("?search=milk");
   });
 
@@ -395,7 +548,12 @@ describe("TodoFlows search", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
 
-    expect(useTodos).toHaveBeenLastCalledWith({ status: "all", search: null, page: 1 });
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
     expect(searchBox()).toHaveValue("");
     expect(searchBox()).toHaveFocus();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -454,6 +612,15 @@ describe("TodoFlows search", () => {
 
     expect(screen.getByText(message)).toBeInTheDocument();
     expect(screen.queryByText("No todos yet.")).not.toBeInTheDocument();
+  });
+
+  it("names the search in the empty message when a ready list has no rows", () => {
+    window.history.replaceState(null, "", "/?status=active&search=milk");
+    givenHook({ serverState: "ready", todos: [] });
+    render(<TodoFlows />);
+
+    expect(screen.getByText("No active todos match “milk”.")).toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
   });
 
   it("renders the search text in the empty message as text, never as HTML", () => {
@@ -658,5 +825,384 @@ describe("TodoFlows completion checkbox", () => {
     await userEvent.click(checkbox);
 
     expect(toggle).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("TodoFlows pagination", () => {
+  //Test 55
+  it.each<TodoServerState>([
+    "initial-loading",
+    "initial-failure",
+    "empty",
+    "ready",
+    "refreshing",
+    "refresh-failure",
+  ])("keeps the page bar on screen for %s", (serverState) => {
+    givenHook({ serverState, error: { type: "NETWORK_ERROR", message: "Offline" } });
+    render(<TodoFlows />);
+
+    const nav = screen.getByRole("navigation", { name: "Pagination" });
+    expect(within(nav).getByRole("button", { name: "Previous page" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Next page" })).toBeInTheDocument();
+    expect(within(nav).getByRole("combobox", { name: "Todos per page" })).toBeInTheDocument();
+  });
+
+  it("shows Page X of Y from the response on screen", () => {
+    window.history.replaceState(null, "", "/?page=2");
+    givenPages(5);
+    render(<TodoFlows />);
+
+    expect(screen.getByText("Page 2 of 5")).toBeInTheDocument();
+  });
+
+  //Test 56
+  it("asks the hook for the next page with the same status, search, and page size, and the URL shows it", async () => {
+    window.history.replaceState(null, "", "/?status=active&search=milk&pageSize=10");
+    givenPages(5);
+    render(<TodoFlows />);
+
+    await userEvent.click(nextButton());
+
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "active",
+      search: "milk",
+      page: 2,
+      pageSize: 10,
+    });
+    expect(window.location.search).toBe("?status=active&search=milk&page=2&pageSize=10");
+    expect(screen.getByText("Page 2 of 5")).toBeInTheDocument();
+  });
+
+  //Test 57
+  it("goes back one page with Previous, and page 1 removes page from the URL", async () => {
+    window.history.replaceState(null, "", "/?page=3");
+    givenPages(5);
+    render(<TodoFlows />);
+
+    await userEvent.click(previousButton());
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 2,
+      pageSize: 20,
+    });
+    expect(window.location.search).toBe("?page=2");
+
+    await userEvent.click(previousButton());
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(window.location.search).toBe("");
+    expect(previousButton()).toBeDisabled();
+  });
+
+  //Test 58
+  it("goes back to page 1 and uses the new size when the page size changes from page 3", async () => {
+    window.history.replaceState(null, "", "/?page=3");
+    givenPages(5);
+    render(<TodoFlows />);
+
+    await userEvent.selectOptions(sizeSelect(), "10");
+
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 10,
+    });
+    expect(window.location.search).toBe("?pageSize=10");
+    expect(sizeSelect()).toHaveValue("10");
+  });
+
+  //Test 59
+  it("drops the page and keeps the page size when a new search is committed", async () => {
+    window.history.replaceState(null, "", "/?page=3&pageSize=10");
+    givenPages(5);
+    render(<TodoFlows />);
+
+    await searchFor("milk");
+
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: "milk",
+      page: 1,
+      pageSize: 10,
+    });
+    expect(window.location.search).toBe("?search=milk&pageSize=10");
+  });
+
+  it("drops the page and keeps the page size when the search is cleared", async () => {
+    window.history.replaceState(null, "", "/?search=milk&page=3&pageSize=10");
+    givenPages(5);
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 10,
+    });
+    expect(window.location.search).toBe("?pageSize=10");
+  });
+
+  //Test 60
+  it("drops the page and keeps the page size when a status is chosen, and the status links keep pageSize", async () => {
+    window.history.replaceState(null, "", "/?page=3&pageSize=10");
+    givenPages(5);
+    render(<TodoFlows />);
+    expect(screen.getByRole("link", { name: "All" })).toHaveAttribute("href", "/?pageSize=10");
+    expect(screen.getByRole("link", { name: "Active" })).toHaveAttribute(
+      "href",
+      "/?status=active&pageSize=10",
+    );
+
+    await userEvent.click(screen.getByRole("link", { name: "Active" }));
+
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "active",
+      search: null,
+      page: 1,
+      pageSize: 10,
+    });
+    expect(window.location.search).toBe("?status=active&pageSize=10");
+  });
+
+  //Test 61
+  it("recovers from an empty page past the end with replaceState, and says which page is shown", async () => {
+    window.history.replaceState(null, "", "/?page=9");
+    const historyLength = window.history.length;
+    givenHookByPage((page) =>
+      page === 9
+        ? hookResult({ serverState: "empty", pagination: pageInfo(9, 3, { totalItems: 45 }) })
+        : hookResult({ todos: [todo], pagination: pageInfo(page, 3, { totalItems: 45 }) }),
+    );
+
+    render(<TodoFlows />);
+
+    const notice = await screen.findByText("Page 9 does not exist. Showing page 3.");
+    expect(notice).toHaveAttribute("role", "status");
+    expect(window.location.search).toBe("?page=3");
+    expect(window.history.length).toBe(historyLength);
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 3,
+      pageSize: 20,
+    });
+    expect(screen.getByText("Page 3 of 3")).toBeInTheDocument();
+  });
+
+  //Test 62
+  it("resets to page 1, shows the normal empty message, and shows the recovery message when there are no todos", async () => {
+    window.history.replaceState(null, "", "/?page=4");
+    givenHookByPage((page) =>
+      hookResult({
+        serverState: "empty",
+        pagination: pageInfo(page, 0, { totalItems: 0 }),
+      }),
+    );
+
+    render(<TodoFlows />);
+
+    expect(await screen.findByText("Page 4 does not exist. Showing page 1.")).toBeInTheDocument();
+    expect(screen.getByText(/no todos yet/i)).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+    expect(previousButton()).toBeDisabled();
+    expect(nextButton()).toBeDisabled();
+  });
+
+  //Test 63
+  it("runs the recovery once, with no loop", async () => {
+    window.history.replaceState(null, "", "/?page=9");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    givenHookByPage((page) =>
+      page === 9
+        ? hookResult({ serverState: "empty", pagination: pageInfo(9, 3, { totalItems: 45 }) })
+        : hookResult({ todos: [todo], pagination: pageInfo(page, 3, { totalItems: 45 }) }),
+    );
+
+    render(<TodoFlows />);
+
+    await screen.findByText("Page 9 does not exist. Showing page 3.");
+    const recoveries = replaceState.mock.calls.filter(([, , url]) => String(url) === "/?page=3");
+    expect(recoveries).toHaveLength(1);
+    const pages = vi.mocked(useTodos).mock.calls.map(([query]) => query?.page);
+    expect(pages.at(-1)).toBe(3);
+    expect(pages.indexOf(3)).toBeGreaterThan(pages.lastIndexOf(9));
+    replaceState.mockRestore();
+  });
+
+  it("shows an empty page inside the range as it is, with no recovery", () => {
+    window.history.replaceState(null, "", "/?page=2");
+    givenHookByPage((page) =>
+      hookResult({ serverState: "empty", pagination: pageInfo(page, 3, { totalItems: 45 }) }),
+    );
+
+    render(<TodoFlows />);
+
+    expect(window.location.search).toBe("?page=2");
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+
+  //Test 64
+  it.each<{ name: string; act: () => Promise<void> }>([
+    { name: "the page", act: () => userEvent.click(previousButton()) },
+    { name: "the page size", act: () => userEvent.selectOptions(sizeSelect(), "10") },
+    {
+      name: "the status",
+      act: () => userEvent.click(screen.getByRole("link", { name: "Active" })),
+    },
+    { name: "the search", act: () => searchFor("milk") },
+  ])("removes the recovery message when the user changes $name", async ({ act }) => {
+    window.history.replaceState(null, "", "/?page=9");
+    givenHookByPage((page) =>
+      page === 9
+        ? hookResult({ serverState: "empty", pagination: pageInfo(9, 3, { totalItems: 45 }) })
+        : hookResult({ todos: [todo], pagination: pageInfo(page, 3, { totalItems: 45 }) }),
+    );
+    render(<TodoFlows />);
+    await screen.findByText("Page 9 does not exist. Showing page 3.");
+
+    await act();
+
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+
+  //Test 65
+  it("recovers to the last valid page after the last row of the last page is deleted, and focus is not lost", async () => {
+    window.history.replaceState(null, "", "/?page=3");
+    let deleted = false;
+    givenHookByPage((page) => {
+      if (deleted) {
+        return page === 3
+          ? hookResult({ serverState: "empty", pagination: pageInfo(3, 2, { totalItems: 40 }) })
+          : hookResult({ todos: [doneTodo], pagination: pageInfo(page, 2, { totalItems: 40 }) });
+      }
+      return hookResult({ todos: [todo], pagination: pageInfo(page, 3, { totalItems: 41 }) });
+    });
+    vi.mocked(useDeleteTodo).mockReturnValue({
+      remove: vi.fn().mockImplementation(async () => {
+        deleted = true;
+        return ok(undefined);
+      }),
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete “Buy milk”" }));
+
+    const notice = await screen.findByText("Page 3 does not exist. Showing page 2.");
+    expect(window.location.search).toBe("?page=2");
+    expect(screen.getByText("Walk the dog")).toBeInTheDocument();
+    await waitFor(() => expect(notice).toHaveFocus());
+  });
+
+  //Test 66
+  it("recovers in the same way when toggling the last row of a page in a filtered list empties it", async () => {
+    window.history.replaceState(null, "", "/?status=active&page=2");
+    let toggled = false;
+    givenHookByPage((page) => {
+      if (toggled) {
+        return page === 2
+          ? hookResult({ serverState: "empty", pagination: pageInfo(2, 1, { totalItems: 20 }) })
+          : hookResult({ todos: [doneTodo], pagination: pageInfo(page, 1, { totalItems: 20 }) });
+      }
+      return hookResult({ todos: [todo], pagination: pageInfo(page, 2, { totalItems: 21 }) });
+    });
+    toggle.mockImplementation(async () => {
+      toggled = true;
+      return ok({ ...todo, completed: true });
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(await screen.findByText("Page 2 does not exist. Showing page 1.")).toBeInTheDocument();
+    expect(window.location.search).toBe("?status=active");
+  });
+
+  //Test 67
+  it("never passes an invalid page or page size from the URL to the hook, and cleans the URL", () => {
+    window.history.replaceState(null, "", "/?page=0&pageSize=7");
+    givenHook({});
+
+    render(<TodoFlows />);
+
+    expect(useTodos).not.toHaveBeenCalledWith(expect.objectContaining({ page: 0 }));
+    expect(useTodos).not.toHaveBeenCalledWith(expect.objectContaining({ pageSize: 7 }));
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(window.location.search).toBe("");
+  });
+
+  //Test 68
+  it("keeps the page bar usable when a page fails to load, and Retry refetches the current page only", async () => {
+    window.history.replaceState(null, "", "/?page=2");
+    const failed = hookResult({
+      serverState: "initial-failure",
+      error: { type: "NETWORK_ERROR", message: "secret-internal-detail" },
+    });
+    const fine = hookResult({ todos: [todo], pagination: pageInfo(1, 3) });
+    givenHookByPage((page) => (page === 2 ? failed : fine));
+    render(<TodoFlows />);
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.queryByText(/secret-internal-detail/)).not.toBeInTheDocument();
+    expect(screen.getByText("Page 2")).toBeInTheDocument();
+    expect(previousButton()).toBeEnabled();
+    expect(sizeSelect()).toBeEnabled();
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(failed.refetch).toHaveBeenCalledTimes(1);
+    expect(fine.refetch).not.toHaveBeenCalled();
+
+    await userEvent.click(previousButton());
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Buy milk")).toBeInTheDocument();
+  });
+
+  //Test 69
+  it("keeps Next enabled and focused while the next page loads, using the last known page count", async () => {
+    givenHookByPage((page) =>
+      page === 1
+        ? hookResult({ todos: [todo], pagination: pageInfo(1, 3) })
+        : hookResult({ serverState: "initial-loading", todos: [], pagination: null }),
+    );
+    render(<TodoFlows />);
+
+    await userEvent.click(nextButton());
+
+    expect(screen.getByRole("status")).toHaveTextContent(/loading todos/i);
+    expect(screen.getByText("Page 2 of 3")).toBeInTheDocument();
+    expect(nextButton()).toBeEnabled();
+    expect(nextButton()).toHaveFocus();
+  });
+
+  it("drops the last known page count when the status changes, so Next is disabled until the response arrives", async () => {
+    givenHookByStatus({
+      all: hookResult({ todos: [todo], pagination: pageInfo(1, 3) }),
+      active: hookResult({ serverState: "initial-loading", todos: [], pagination: null }),
+    });
+    render(<TodoFlows />);
+    expect(screen.getByText("Page 1 of 3")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: "Active" }));
+
+    expect(screen.getByText("Page 1")).toBeInTheDocument();
+    expect(nextButton()).toBeDisabled();
   });
 });
