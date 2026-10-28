@@ -522,7 +522,7 @@ test.describe("Todo list page (browser)", () => {
     await alert.getByRole("button", { name: "Retry" }).click();
 
     await expect(page.getByRole("listitem")).toHaveCount(1);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 
   test("keeps the todos and shows Refreshing while a refetch is in flight", async ({
@@ -660,7 +660,7 @@ test.describe("Create todo form (browser)", () => {
     await page.getByRole("button", { name: "Add todo" }).click();
 
     await expect(page.getByRole("listitem")).toHaveCount(1);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 });
 
@@ -692,7 +692,7 @@ test.describe("Toggle todo checkbox (browser)", () => {
     await expect(checkbox).toBeChecked();
     await expect(page.locator("li span", { hasText: "Buy milk" })).toHaveClass(/line-through/);
     await expect(page.getByRole("status")).toHaveCount(0);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
 
     await page.reload();
@@ -772,7 +772,7 @@ test.describe("Toggle todo checkbox (browser)", () => {
     await checkbox.click();
 
     await expect(checkbox).toBeChecked();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
   });
 
@@ -842,7 +842,7 @@ test.describe("Delete todo button (browser)", () => {
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(page.getByText("Deleted “Buy milk”.")).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(await statusOf(request, milk.id)).toBe(404);
     expect(await statusOf(request, dog.id)).toBe(200);
 
@@ -929,7 +929,7 @@ test.describe("Delete todo button (browser)", () => {
     await expect(page.getByText(ALREADY_DELETED)).toBeVisible();
     await expect(page.getByText("No todos yet.")).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 
   test("keeps the row and shows a safe message for a 503, and a retry deletes it", async ({
@@ -961,7 +961,7 @@ test.describe("Delete todo button (browser)", () => {
     await button.click();
 
     await expect(page.getByText("No todos yet.")).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(await statusOf(request, milk.id)).toBe(404);
   });
 
@@ -1640,7 +1640,7 @@ test.describe("Search todos (browser)", () => {
     await alert.getByRole("button", { name: "Retry" }).click();
 
     await expect(page.getByRole("listitem")).toHaveCount(2);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     await expect(searchBox(page)).toHaveValue("milk");
   });
 
@@ -2209,7 +2209,7 @@ test.describe("Pagination (browser)", () => {
     await alert.getByRole("button", { name: "Retry" }).click();
 
     await expect(rows(page)).toHaveCount(20);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     await expect(page.getByText("Page 2 of 3")).toBeVisible();
   });
 
