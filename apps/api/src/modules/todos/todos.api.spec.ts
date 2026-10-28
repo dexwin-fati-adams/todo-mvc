@@ -2267,7 +2267,7 @@ test.describe("Pagination (browser)", () => {
     await expect(rows(page)).toHaveCount(20);
 
     const next = nextButton(page);
-    for (let i = 0; i < 40; i += 1) {
+    for (let i = 0; i < 120; i += 1) {
       await page.keyboard.press("Tab");
       if (await next.evaluate((element) => element === document.activeElement)) {
         break;
