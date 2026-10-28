@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { err, ok, type Result } from "neverthrow";
-import type { SetAllCompletedResponse, Status, Todo } from "contracts";
+import type { Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
@@ -37,8 +37,11 @@ const doneTodo: Todo = {
 };
 
 const toggle = vi.fn<(id: string, body: UpdateTodoRequest) => Promise<ToggleOutcome>>();
-const setAll =
-  vi.fn<(completed: boolean) => Promise<Result<SetAllCompletedResponse, ClientError>>>();
+const { setAll } = vi.hoisted(() => ({ setAll: vi.fn() }));
+
+vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
+  useSetAllCompleted: () => ({ setAll }),
+}));
 
 function hookResult(overrides: Partial<HookResult>): HookResult {
   return {
@@ -134,10 +137,7 @@ beforeEach(() => {
   setAll.mockReset();
   setAll.mockResolvedValue(ok({ updatedCount: 45 }));
   vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
-    useSetAllCompleted: () => ({
-      setAll: () => Promise.resolve(),
-      refresh: () => Promise.resolve(),
-    }),
+    useSetAllCompleted: () => ({ setAll: vi.fn().mockResolvedValue(ok({ updatedCount: 0 })) }),
   }));
 });
 
