@@ -5,10 +5,12 @@ import type { ClientError } from "@/api/todos/todo.api";
 import { Pagination } from "@/modules/todos/components/Pagination";
 import { SearchBox } from "@/modules/todos/components/SearchBox";
 import { StatusFilter } from "@/modules/todos/components/StatusFilter";
+import { ToggleAll } from "@/modules/todos/components/ToggleAll";
 import { buildListUrl } from "@/modules/todos/flows/buildListUrl";
 import { resolvePage } from "@/modules/todos/flows/resolvePage";
 import { useLastPagination } from "@/modules/todos/flows/useLastPagination";
 import { useListParams } from "@/modules/todos/flows/useListParams";
+import { useToggleAllFlow } from "@/modules/todos/flows/useToggleAllFlow";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useTodoDeleteFlow } from "@/modules/todos/flows/TodoDeleteFlow";
@@ -82,6 +84,13 @@ export function TodoFlows() {
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const needsNoticeFocus = useRef(false);
   const viewKey = JSON.stringify([status, search, pageSize, page]);
+
+  //Toggle all always means the whole collection. It reads only the counts, never the rows on screen.
+  const toggleAll = useToggleAllFlow({
+    counts,
+    listIsSettled: serverState !== "initial-loading",
+    viewKey,
+  });
 
   //Plain values for the recovery effect, so its dependency list is complete and honest.
   const rowCount = todos.length;
@@ -195,6 +204,7 @@ export function TodoFlows() {
         onSelect={selectStatus}
         hrefFor={hrefFor}
       />
+      <ToggleAll {...toggleAll} />
       <TodoView
         state={serverState}
         todos={todos}

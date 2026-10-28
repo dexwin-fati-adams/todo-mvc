@@ -127,6 +127,24 @@ test.describe("GET /todos", () => {
     expect(body.todos).toHaveLength(5);
   });
 
+  // The browser recovery flow (tests 73 to 88) depends on this: a page past the end is not an
+  // error. It is an empty list that still carries the real totals, so the UI can jump to the last page.
+  test("returns an empty page with the real totals when the page is past the end", async ({
+    request,
+  }) => {
+    for (let i = 0; i < 25; i++) {
+      await createTodo(request, `Todo ${i}`);
+    }
+
+    const res = await request.get("/todos?page=9&pageSize=20");
+    expect(res.status()).toBe(200);
+
+    const body = (await res.json()) as TodoListResponse;
+    expect(body.todos).toEqual([]);
+    expect(body.totalItems).toBe(25);
+    expect(body.totalPages).toBe(2);
+  });
+
   test("rejects an invalid status value", async ({ request }) => {
     const res = await request.get("/todos?status=bogus");
     expect(res.status()).toBe(400);
@@ -494,7 +512,7 @@ test.describe("Todo list page (browser)", () => {
 
     await page.goto(WEB_URL);
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: /\S/ });
     await expect(alert).toBeVisible();
     await expect(page.getByRole("list")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
@@ -504,7 +522,7 @@ test.describe("Todo list page (browser)", () => {
     await alert.getByRole("button", { name: "Retry" }).click();
 
     await expect(page.getByRole("listitem")).toHaveCount(1);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 
   test("keeps the todos and shows Refreshing while a refetch is in flight", async ({
@@ -521,9 +539,9 @@ test.describe("Todo list page (browser)", () => {
     });
     await page.evaluate(triggerRefetch);
 
-    await expect(page.getByRole("status")).toContainText("Refreshing");
+    await expect(page.getByRole("status").filter({ hasText: "Refreshing" })).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 
   test("keeps the todos and shows a safe error when a refetch fails", async ({ page, request }) => {
@@ -536,7 +554,7 @@ test.describe("Todo list page (browser)", () => {
     );
     await page.evaluate(triggerRefetch);
 
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
   });
@@ -584,12 +602,16 @@ test.describe("Create todo form (browser)", () => {
 
     const field = page.getByLabel(LABEL);
     await page.getByRole("button", { name: "Add todo" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a title for your todo.");
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
+      "Enter a title for your todo.",
+    );
     await expect(field).toBeFocused();
 
     await field.fill("     ");
     await page.getByRole("button", { name: "Add todo" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a title for your todo.");
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
+      "Enter a title for your todo.",
+    );
 
     expect(posts).toEqual([]);
   });
@@ -630,7 +652,7 @@ test.describe("Create todo form (browser)", () => {
     await field.fill("Buy milk");
     await page.getByRole("button", { name: "Add todo" }).click();
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "We couldn't add your todo. Please try again.",
     );
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
@@ -642,7 +664,7 @@ test.describe("Create todo form (browser)", () => {
     await page.getByRole("button", { name: "Add todo" }).click();
 
     await expect(page.getByRole("listitem")).toHaveCount(1);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 });
 
@@ -673,8 +695,8 @@ test.describe("Toggle todo checkbox (browser)", () => {
 
     await expect(checkbox).toBeChecked();
     await expect(page.locator("li span", { hasText: "Buy milk" })).toHaveClass(/line-through/);
-    await expect(page.getByRole("status")).toHaveCount(0);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
 
     await page.reload();
@@ -715,13 +737,13 @@ test.describe("Toggle todo checkbox (browser)", () => {
     const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
     await checkbox.click();
 
-    await expect(page.getByRole("status")).toHaveText("Updating…");
+    await expect(page.getByRole("status").filter({ hasText: "Updating…" })).toHaveText("Updating…");
     await expect(checkbox).toHaveAttribute("aria-disabled", "true");
     await checkbox.click({ force: true });
     await checkbox.press("Space");
 
     await expect(checkbox).toBeChecked();
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(patches).toHaveLength(1);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
   });
@@ -741,7 +763,7 @@ test.describe("Toggle todo checkbox (browser)", () => {
     const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
     await checkbox.click();
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "Could not update this todo. Please try again.",
     );
     await expect(checkbox).not.toBeChecked();
@@ -754,7 +776,7 @@ test.describe("Toggle todo checkbox (browser)", () => {
     await checkbox.click();
 
     await expect(checkbox).toBeChecked();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
   });
 
@@ -824,7 +846,7 @@ test.describe("Delete todo button (browser)", () => {
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(page.getByText("Deleted “Buy milk”.")).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(await statusOf(request, milk.id)).toBe(404);
     expect(await statusOf(request, dog.id)).toBe(200);
 
@@ -911,7 +933,7 @@ test.describe("Delete todo button (browser)", () => {
     await expect(page.getByText(ALREADY_DELETED)).toBeVisible();
     await expect(page.getByText("No todos yet.")).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toHaveCount(0);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 
   test("keeps the row and shows a safe message for a 503, and a retry deletes it", async ({
@@ -929,7 +951,7 @@ test.describe("Delete todo button (browser)", () => {
     const button = deleteButton(page, "Buy milk");
     await button.click();
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "Could not delete this todo. Please try again.",
     );
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toBeVisible();
@@ -943,7 +965,7 @@ test.describe("Delete todo button (browser)", () => {
     await button.click();
 
     await expect(page.getByText("No todos yet.")).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(await statusOf(request, milk.id)).toBe(404);
   });
 
@@ -1158,7 +1180,9 @@ test.describe("Status filter controls (browser)", () => {
 
     await filterLink(page, "Completed").click();
 
-    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toContainText(
+      /loading todos/i,
+    );
     await expect(page.getByRole("listitem")).toHaveCount(0);
     await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
     await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
@@ -1451,7 +1475,7 @@ test.describe("Search todos (browser)", () => {
     await searchBox(page).fill("     ");
     await searchBox(page).press("Enter");
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "Enter a search term, or clear the box to see all todos.",
     );
     await expect(searchBox(page)).toHaveAttribute("aria-invalid", "true");
@@ -1459,7 +1483,7 @@ test.describe("Search todos (browser)", () => {
     await searchBox(page).fill("a".repeat(MAX_LENGTH + 1));
     await searchBox(page).press("Enter");
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       `Search can be at most ${MAX_LENGTH} characters.`,
     );
     await page.waitForTimeout(600);
@@ -1577,7 +1601,9 @@ test.describe("Search todos (browser)", () => {
 
     await searchBox(page).fill("milk");
 
-    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toContainText(
+      /loading todos/i,
+    );
     await expect(page.getByRole("listitem")).toHaveCount(0);
     await expect(rowCheckbox(page, "Write report")).toHaveCount(0);
     await expect(searchBox(page)).toHaveValue("milk");
@@ -1609,7 +1635,7 @@ test.describe("Search todos (browser)", () => {
 
     await searchBox(page).fill("milk");
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: /\S/ });
     await expect(alert).toBeVisible();
     await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
     await expect(searchBox(page)).toHaveValue("milk");
@@ -1622,7 +1648,7 @@ test.describe("Search todos (browser)", () => {
     await alert.getByRole("button", { name: "Retry" }).click();
 
     await expect(page.getByRole("listitem")).toHaveCount(2);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     await expect(searchBox(page)).toHaveValue("milk");
   });
 
@@ -1778,6 +1804,489 @@ test.describe("Search todos (browser)", () => {
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(rowCheckbox(page, "my_var")).toBeVisible();
     await expect(rowCheckbox(page, "myXvar")).toHaveCount(0);
+  });
+});
+
+// M40 browser tests 73 to 88: the page bar (Previous, Next, page size) and the recovery from a page past the end.
+// Each test runs against the real API and the real test database.
+// The default page size is 20, so 45 todos make 3 pages (20 + 20 + 5) and 21 todos make 2 pages (20 + 1).
+// The row order is not asserted, only how many rows are on a page and which page the bar says it is.
+test.describe("Pagination (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const CORS = { "access-control-allow-origin": "*" };
+  const isTodosList = (url: URL) => url.port === "4001" && url.pathname === "/todos";
+  const requestedPage = (url: string) => new URL(url).searchParams.get("page");
+  const requestedPageSize = (url: string) => new URL(url).searchParams.get("pageSize");
+  const requestedSearch = (url: string) => new URL(url).searchParams.get("search");
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+
+  async function seedMany(request: APIRequestContext, count: number): Promise<void> {
+    for (let i = 1; i <= count; i += 1) {
+      await createTodo(request, `Todo ${i}`);
+    }
+  }
+
+  const pageBar = (page: Page) => page.getByRole("navigation", { name: "Pagination" });
+  const previousButton = (page: Page) => page.getByRole("button", { name: "Previous page" });
+  const nextButton = (page: Page) => page.getByRole("button", { name: "Next page" });
+  const sizeSelect = (page: Page) => page.getByRole("combobox", { name: "Todos per page" });
+  const rows = (page: Page) => page.getByRole("listitem");
+
+  // The filter links live in a labelled nav. The name starts with the label, because a count may follow it, e.g. "Active (2)".
+  const filterLink = (page: Page, label: "All" | "Active" | "Completed") =>
+    page
+      .getByRole("navigation", { name: "Filter todos" })
+      .getByRole("link", { name: new RegExp(`^${label}`) });
+
+  const searchBox = (page: Page) => page.getByRole("searchbox", { name: "Search todos" });
+
+  // 73
+  test("shows page 1 of 3 with 20 rows for 45 todos, Previous disabled and Next enabled", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+
+    await expect(rows(page)).toHaveCount(20);
+    await expect(pageBar(page)).toBeVisible();
+    await expect(page.getByText("Page 1 of 3")).toBeVisible();
+    await expect(previousButton(page)).toBeDisabled();
+    await expect(nextButton(page)).toBeEnabled();
+    await expect(sizeSelect(page)).toHaveValue("20");
+  });
+
+  // 74
+  test("Next requests page=2, updates the URL, and the last page shows 5 rows with Next disabled", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+
+    const pageTwo = page.waitForRequest(
+      (req) => isTodosList(new URL(req.url())) && requestedPage(req.url()) === "2",
+    );
+    await nextButton(page).click();
+    await pageTwo;
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByText("Page 2 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+
+    await nextButton(page).click();
+
+    await expect(page).toHaveURL(/page=3/);
+    await expect(page.getByText("Page 3 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(5);
+    await expect(nextButton(page)).toBeDisabled();
+    await expect(previousButton(page)).toBeEnabled();
+  });
+
+  // 75
+  test("Previous goes back one page, and page 1 removes page from the URL and the request", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(`${WEB_URL}/?page=3`);
+    await expect(page.getByText("Page 3 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(5);
+
+    await previousButton(page).click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByText("Page 2 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+
+    const pageOneRequests: string[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url())) && requestedPage(req.url()) === null) {
+        pageOneRequests.push(req.url());
+      }
+    });
+    await previousButton(page).click();
+
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page.getByText("Page 1 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+    await expect(previousButton(page)).toBeDisabled();
+    // Page 1 is the default, so it is left out of the request, the same way pageSize=20 is.
+    expect(pageOneRequests.length).toBeGreaterThan(0);
+  });
+
+  // 76
+  test("changing the page size from page 3 goes back to page 1, sends pageSize=10, and shows 10 rows", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(`${WEB_URL}/?page=3`);
+    await expect(page.getByText("Page 3 of 3")).toBeVisible();
+
+    const sizeRequest = page.waitForRequest(
+      (req) =>
+        isTodosList(new URL(req.url())) &&
+        requestedPageSize(req.url()) === "10" &&
+        requestedPage(req.url()) === null,
+    );
+    await sizeSelect(page).selectOption("10");
+    await sizeRequest;
+
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(sizeSelect(page)).toHaveValue("10");
+    await expect(page.getByText("Page 1 of 5")).toBeVisible();
+    await expect(rows(page)).toHaveCount(10);
+  });
+
+  // 77
+  test("reloading with page and pageSize in the URL restores them, and Back returns to the previous page", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(`${WEB_URL}/?page=2&pageSize=10`);
+
+    await expect(page.getByText("Page 2 of 5")).toBeVisible();
+    await expect(sizeSelect(page)).toHaveValue("10");
+    await expect(rows(page)).toHaveCount(10);
+
+    await page.reload();
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page.getByText("Page 2 of 5")).toBeVisible();
+    await expect(sizeSelect(page)).toHaveValue("10");
+
+    await nextButton(page).click();
+    await expect(page).toHaveURL(/page=3/);
+    await expect(page.getByText("Page 3 of 5")).toBeVisible();
+
+    await page.goBack();
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page.getByText("Page 2 of 5")).toBeVisible();
+    await expect(rows(page)).toHaveCount(10);
+  });
+
+  // 78
+  test("choosing a status drops the page and keeps the page size", async ({ page, request }) => {
+    await seedMany(request, 45);
+    await page.goto(`${WEB_URL}/?page=3&pageSize=10`);
+    await expect(page.getByText("Page 3 of 5")).toBeVisible();
+
+    const activeRequest = page.waitForRequest(
+      (req) =>
+        isTodosList(new URL(req.url())) &&
+        new URL(req.url()).searchParams.get("status") === "active" &&
+        requestedPageSize(req.url()) === "10" &&
+        requestedPage(req.url()) === null,
+    );
+    await filterLink(page, "Active").click();
+    await activeRequest;
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page.getByText("Page 1 of 5")).toBeVisible();
+    await expect(rows(page)).toHaveCount(10);
+  });
+
+  // 79
+  test("a new search and Clear both drop the page and keep the page size", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(`${WEB_URL}/?page=3&pageSize=10`);
+    await expect(page.getByText("Page 3 of 5")).toBeVisible();
+
+    const searchRequest = page.waitForRequest(
+      (req) =>
+        isTodosList(new URL(req.url())) &&
+        requestedSearch(req.url()) === "Todo 1" &&
+        requestedPageSize(req.url()) === "10" &&
+        requestedPage(req.url()) === null,
+    );
+    await searchBox(page).fill("Todo 1");
+    await searchRequest;
+
+    await expect(page).toHaveURL(/search=Todo(\+|%20)1/);
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page).not.toHaveURL(/page=/);
+    // "Todo 1" matches Todo 1, Todo 10 to 19: 11 todos, which is 2 pages of 10.
+    await expect(page.getByText("Page 1 of 2")).toBeVisible();
+    await expect(rows(page)).toHaveCount(10);
+
+    await nextButton(page).click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(rows(page)).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Clear search" }).click();
+
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page.getByText("Page 1 of 5")).toBeVisible();
+    await expect(rows(page)).toHaveCount(10);
+  });
+
+  // 80
+  test("a page past the end recovers to the last page, says so, and keeps status, search, and page size", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    const pageNineRequests: string[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url())) && requestedPage(req.url()) === "9") {
+        pageNineRequests.push(req.url());
+      }
+    });
+
+    await page.goto(`${WEB_URL}/?page=9`);
+
+    const notice = page.getByRole("status").filter({ hasText: "Page 9 does not exist." });
+    await expect(notice).toHaveText("Page 9 does not exist. Showing page 3.");
+    await expect(page).toHaveURL(/page=3/);
+    await expect(page).not.toHaveURL(/page=9/);
+    await expect(page.getByText("Page 3 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(5);
+    // The recovery runs once: the bad page is asked for once, then the last page is shown, with no loop.
+    expect(pageNineRequests).toHaveLength(1);
+
+    // Status, search, and page size survive the recovery.
+    await page.goto(`${WEB_URL}/?search=Todo&pageSize=10&page=9`);
+
+    await expect(
+      page.getByRole("status").filter({ hasText: "Page 9 does not exist. Showing page 5." }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/search=Todo/);
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(page).toHaveURL(/page=5/);
+    await expect(rows(page)).toHaveCount(5);
+  });
+
+  // 81
+  test("recovery uses replaceState, so Back does not return to the page that does not exist", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+
+    await page.goto(`${WEB_URL}/?page=9`);
+    await expect(page.getByText("Page 9 does not exist. Showing page 3.")).toBeVisible();
+    await expect(page).toHaveURL(/page=3/);
+
+    await page.goBack();
+
+    await expect(page).not.toHaveURL(/page=9/);
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page.getByText("Page 1 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+  });
+
+  // 82
+  test("with no todos, a page past the end resets to page 1, shows the normal empty message, and disables both buttons", async ({
+    page,
+  }) => {
+    await page.goto(`${WEB_URL}/?page=4`);
+
+    await expect(page.getByText("Page 4 does not exist. Showing page 1.")).toBeVisible();
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(previousButton(page)).toBeDisabled();
+    await expect(nextButton(page)).toBeDisabled();
+    await expect(rows(page)).toHaveCount(0);
+  });
+
+  // 83
+  test("the recovery message goes away when the user changes the page, the page size, the status, or the search", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    const notice = page.getByText("Page 9 does not exist. Showing page 3.");
+
+    await page.goto(`${WEB_URL}/?page=9`);
+    await expect(notice).toBeVisible();
+    await previousButton(page).click();
+    await expect(notice).toHaveCount(0);
+
+    await page.goto(`${WEB_URL}/?page=9`);
+    await expect(notice).toBeVisible();
+    await sizeSelect(page).selectOption("10");
+    await expect(notice).toHaveCount(0);
+
+    await page.goto(`${WEB_URL}/?page=9`);
+    await expect(notice).toBeVisible();
+    await filterLink(page, "Active").click();
+    await expect(notice).toHaveCount(0);
+
+    await page.goto(`${WEB_URL}/?page=9`);
+    await expect(notice).toBeVisible();
+    await searchBox(page).fill("Todo");
+    await expect(notice).toHaveCount(0);
+  });
+
+  // 84
+  test("deleting the only row on the last page recovers to the last valid page, and focus is not lost", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 21);
+    await page.goto(`${WEB_URL}/?page=2`);
+    await expect(page.getByText("Page 2 of 2")).toBeVisible();
+    await expect(rows(page)).toHaveCount(1);
+
+    await rows(page)
+      .first()
+      .getByRole("button", { name: /^Delete/ })
+      .click();
+
+    const notice = page.getByText("Page 2 does not exist. Showing page 1.");
+    await expect(notice).toBeVisible();
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page.getByText("Page 1 of 1")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+    await expect(notice).toBeFocused();
+
+    const list = (await (await request.get("/todos")).json()) as TodoListResponse;
+    expect(list.totalItems).toBe(20);
+  });
+
+  // 85
+  test("invalid page and pageSize values in the URL are never sent to the API, and the URL is cleaned", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 25);
+    const sent: { page: string | null; pageSize: string | null }[] = [];
+    page.on("request", (req) => {
+      if (isTodosList(new URL(req.url()))) {
+        sent.push({ page: requestedPage(req.url()), pageSize: requestedPageSize(req.url()) });
+      }
+    });
+
+    await page.goto(`${WEB_URL}/?page=0&pageSize=7`);
+
+    await expect(rows(page)).toHaveCount(20);
+    await expect(page.getByText("Page 1 of 2")).toBeVisible();
+    await expect(sizeSelect(page)).toHaveValue("20");
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page).not.toHaveURL(/pageSize=/);
+    expect(sent.length).toBeGreaterThan(0);
+    for (const query of sent) {
+      expect(query.page).not.toBe("0");
+      expect(query.pageSize).not.toBe("7");
+    }
+  });
+
+  // 86
+  test("a 503 on page 2 shows the safe message with Retry, keeps the page bar usable, and Retry shows the rows", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+
+    const failPageTwo = (route: Route) =>
+      requestedPage(route.request().url()) === "2"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodosList, failPageTwo);
+
+    await nextButton(page).click();
+
+    const alert = page.getByRole("alert").filter({ hasText: /\S/ });
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(rows(page)).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    await expect(page).toHaveURL(/page=2/);
+    await expect(previousButton(page)).toBeEnabled();
+    await expect(sizeSelect(page)).toBeEnabled();
+
+    await page.unroute(isTodosList, failPageTwo);
+    await alert.getByRole("button", { name: "Retry" }).click();
+
+    await expect(rows(page)).toHaveCount(20);
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
+    await expect(page.getByText("Page 2 of 3")).toBeVisible();
+  });
+
+  // 87
+  test("while the next page loads the old rows are hidden, loading shows, and Next stays enabled and focused using the last known page count", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(isTodosList, async (route) => {
+      if (requestedPage(route.request().url()) === "2") {
+        await held;
+      }
+      await route.continue();
+    });
+
+    await nextButton(page).click();
+
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toContainText(
+      /loading todos/i,
+    );
+    await expect(rows(page)).toHaveCount(0);
+    await expect(page.getByText("Page 2 of 3")).toBeVisible();
+    await expect(nextButton(page)).toBeEnabled();
+    await expect(nextButton(page)).toBeFocused();
+
+    release();
+
+    await expect(rows(page)).toHaveCount(20);
+    await expect(page.getByText("Page 2 of 3")).toBeVisible();
+  });
+
+  // 88
+  test("works with the keyboard only, and the page bar controls show a visible focus outline", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+
+    const next = nextButton(page);
+    for (let i = 0; i < 120; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await next.evaluate((element) => element === document.activeElement)) {
+        break;
+      }
+    }
+    await expect(next).toBeFocused();
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await expect(next).toHaveCSS("outline-width", "2px");
+
+    await page.keyboard.press("Enter");
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.getByText("Page 2 of 3")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+    await expect(next).toBeFocused();
+
+    const select = sizeSelect(page);
+    await select.focus();
+    await expect(select).toHaveCSS("outline-width", "2px");
   });
 });
 

@@ -4,6 +4,7 @@ import type { z } from "zod";
 import {
   ErrorResponseSchema,
   ReplaceTodoRequestSchema,
+  SetAllCompletedResponseSchema,
   TodoListResponseSchema,
   TodoSchema,
   UpdateTodoRequestSchema,
@@ -142,4 +143,11 @@ export const todoApi = {
   },
   remove: (id: string): ResultAsync<undefined, ClientError> =>
     send(`/todos/${encodeURIComponent(id)}`, { method: "DELETE" }).map((): undefined => undefined),
+  //setAllCompleted sets completed on EVERY todo, not only the page on screen. The body is only { completed }, so no status,
+  // search or page can go with it. The server answers with { updatedCount }.
+  setAllCompleted: (completed: boolean) =>
+    request("/todos", SetAllCompletedResponseSchema, {
+      method: "PATCH",
+      body: JSON.stringify({ completed }),
+    }),
 };
