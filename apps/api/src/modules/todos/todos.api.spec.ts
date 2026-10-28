@@ -512,7 +512,7 @@ test.describe("Todo list page (browser)", () => {
 
     await page.goto(WEB_URL);
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: /\S/ });
     await expect(alert).toBeVisible();
     await expect(page.getByRole("list")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
@@ -554,7 +554,7 @@ test.describe("Todo list page (browser)", () => {
     );
     await page.evaluate(triggerRefetch);
 
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
   });
@@ -602,12 +602,16 @@ test.describe("Create todo form (browser)", () => {
 
     const field = page.getByLabel(LABEL);
     await page.getByRole("button", { name: "Add todo" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a title for your todo.");
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
+      "Enter a title for your todo.",
+    );
     await expect(field).toBeFocused();
 
     await field.fill("     ");
     await page.getByRole("button", { name: "Add todo" }).click();
-    await expect(page.getByRole("alert")).toHaveText("Enter a title for your todo.");
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
+      "Enter a title for your todo.",
+    );
 
     expect(posts).toEqual([]);
   });
@@ -648,7 +652,7 @@ test.describe("Create todo form (browser)", () => {
     await field.fill("Buy milk");
     await page.getByRole("button", { name: "Add todo" }).click();
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "We couldn't add your todo. Please try again.",
     );
     await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
@@ -759,7 +763,7 @@ test.describe("Toggle todo checkbox (browser)", () => {
     const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
     await checkbox.click();
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "Could not update this todo. Please try again.",
     );
     await expect(checkbox).not.toBeChecked();
@@ -947,7 +951,7 @@ test.describe("Delete todo button (browser)", () => {
     const button = deleteButton(page, "Buy milk");
     await button.click();
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "Could not delete this todo. Please try again.",
     );
     await expect(page.getByRole("checkbox", { name: "Buy milk" })).toBeVisible();
@@ -1176,7 +1180,9 @@ test.describe("Status filter controls (browser)", () => {
 
     await filterLink(page, "Completed").click();
 
-    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toContainText(
+      /loading todos/i,
+    );
     await expect(page.getByRole("listitem")).toHaveCount(0);
     await expect(rowCheckbox(page, "Buy milk")).toHaveCount(0);
     await expect(rowCheckbox(page, "Walk dog")).toHaveCount(0);
@@ -1469,7 +1475,7 @@ test.describe("Search todos (browser)", () => {
     await searchBox(page).fill("     ");
     await searchBox(page).press("Enter");
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       "Enter a search term, or clear the box to see all todos.",
     );
     await expect(searchBox(page)).toHaveAttribute("aria-invalid", "true");
@@ -1477,7 +1483,7 @@ test.describe("Search todos (browser)", () => {
     await searchBox(page).fill("a".repeat(MAX_LENGTH + 1));
     await searchBox(page).press("Enter");
 
-    await expect(page.getByRole("alert")).toHaveText(
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(
       `Search can be at most ${MAX_LENGTH} characters.`,
     );
     await page.waitForTimeout(600);
@@ -1595,7 +1601,9 @@ test.describe("Search todos (browser)", () => {
 
     await searchBox(page).fill("milk");
 
-    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toContainText(
+      /loading todos/i,
+    );
     await expect(page.getByRole("listitem")).toHaveCount(0);
     await expect(rowCheckbox(page, "Write report")).toHaveCount(0);
     await expect(searchBox(page)).toHaveValue("milk");
@@ -1627,7 +1635,7 @@ test.describe("Search todos (browser)", () => {
 
     await searchBox(page).fill("milk");
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: /\S/ });
     await expect(alert).toBeVisible();
     await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
     await expect(searchBox(page)).toHaveValue("milk");
@@ -2195,7 +2203,7 @@ test.describe("Pagination (browser)", () => {
 
     await nextButton(page).click();
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: /\S/ });
     await expect(alert).toBeVisible();
     await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
     await expect(rows(page)).toHaveCount(0);
@@ -2235,7 +2243,9 @@ test.describe("Pagination (browser)", () => {
 
     await nextButton(page).click();
 
-    await expect(page.getByRole("status")).toContainText(/loading todos/i);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toContainText(
+      /loading todos/i,
+    );
     await expect(rows(page)).toHaveCount(0);
     await expect(page.getByText("Page 2 of 3")).toBeVisible();
     await expect(nextButton(page)).toBeEnabled();
