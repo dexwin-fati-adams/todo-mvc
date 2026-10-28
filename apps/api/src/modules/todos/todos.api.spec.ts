@@ -539,9 +539,9 @@ test.describe("Todo list page (browser)", () => {
     });
     await page.evaluate(triggerRefetch);
 
-    await expect(page.getByRole("status")).toContainText("Refreshing");
+    await expect(page.getByRole("status").filter({ hasText: "Refreshing" })).toBeVisible();
     await expect(page.getByRole("listitem")).toHaveCount(1);
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
   });
 
   test("keeps the todos and shows a safe error when a refetch fails", async ({ page, request }) => {
@@ -691,7 +691,7 @@ test.describe("Toggle todo checkbox (browser)", () => {
 
     await expect(checkbox).toBeChecked();
     await expect(page.locator("li span", { hasText: "Buy milk" })).toHaveClass(/line-through/);
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
     await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
 
@@ -733,13 +733,13 @@ test.describe("Toggle todo checkbox (browser)", () => {
     const checkbox = page.getByRole("checkbox", { name: "Buy milk" });
     await checkbox.click();
 
-    await expect(page.getByRole("status")).toHaveText("Updating…");
+    await expect(page.getByRole("status").filter({ hasText: "Updating…" })).toHaveText("Updating…");
     await expect(checkbox).toHaveAttribute("aria-disabled", "true");
     await checkbox.click({ force: true });
     await checkbox.press("Space");
 
     await expect(checkbox).toBeChecked();
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
     expect(patches).toHaveLength(1);
     expect((await getTodo(request, milk.id)).completed).toBe(true);
   });
