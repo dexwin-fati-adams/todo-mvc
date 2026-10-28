@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { err, ok, type Result } from "neverthrow";
-import type { Status, Todo } from "contracts";
+import type { SetAllCompletedResponse, Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
@@ -9,12 +9,14 @@ import { type PageSize } from "@/modules/todos/flows/pageSize";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 import { useReplaceTodo } from "@/modules/todos/hooks/useReplaceTodo";
+
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
 
 vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
 vi.mock("@/modules/todos/hooks/useDeleteTodo");
 vi.mock("@/modules/todos/hooks/useReplaceTodo");
+vi.mock("@/modules/todos/hooks/useSetAllCompleted");
 
 type HookResult = ReturnType<typeof useTodos>;
 type PaginationInfo = NonNullable<HookResult["pagination"]>;
@@ -35,6 +37,8 @@ const doneTodo: Todo = {
 };
 
 const toggle = vi.fn<(id: string, body: UpdateTodoRequest) => Promise<ToggleOutcome>>();
+const setAll =
+  vi.fn<(completed: boolean) => Promise<Result<SetAllCompletedResponse, ClientError>>>();
 
 function hookResult(overrides: Partial<HookResult>): HookResult {
   return {
@@ -127,6 +131,14 @@ beforeEach(() => {
     replace: vi.fn().mockResolvedValue(ok(todo)),
     refresh: vi.fn().mockResolvedValue(undefined),
   });
+  setAll.mockReset();
+  setAll.mockResolvedValue(ok({ updatedCount: 45 }));
+  vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
+    useSetAllCompleted: () => ({
+      setAll: () => Promise.resolve(),
+      refresh: () => Promise.resolve(),
+    }),
+  }));
 });
 
 describe("TodoFlows", () => {
@@ -1322,5 +1334,55 @@ describe("TodoFlows recovery details", () => {
 
     expect(window.location.search).toBe("?page=9");
     expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("TodoFlows toggle all", () => {
+  // 47
+  it("renders the control above the list with the full-collection label", () => {
+    givenHook({ todos: [todo], counts: { active: 3, completed: 2 } });
+    render(<TodoFlows />);
+
+    const control = screen.getByRole("checkbox", { name: "Mark all 5 todos as complete" });
+    const list = screen.getByRole("list");
+    expect(control.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not render the control when there are no counts", () => {
+    givenHook({ todos: [todo], counts: null });
+    render(<TodoFlows />);
+
+    expect(screen.queryByRole("checkbox", { name: /mark all/i })).not.toBeInTheDocument();
+  });
+
+  it("does not render the control when there are no todos at all", () => {
+    givenHook({ serverState: "empty", counts: { active: 0, completed: 0 } });
+    render(<TodoFlows />);
+
+    expect(screen.queryByRole("checkbox", { name: /mark all/i })).not.toBeInTheDocument();
+  });
+
+  it("sends only the boolean, even on page 2 of a filtered search", async () => {
+    window.history.replaceState(null, "", "/?status=active&search=milk&page=2");
+    givenHook({
+      todos: [todo],
+      counts: { active: 30, completed: 15 },
+      pagination: pageInfo(2, 3, { totalItems: 45 }),
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Mark all 45 todos as complete" }));
+
+    expect(setAll).toHaveBeenCalledTimes(1);
+    expect(setAll).toHaveBeenCalledWith(true);
+  });
+
+  it("sends false when every todo is complete", async () => {
+    givenHook({ todos: [doneTodo], counts: { active: 0, completed: 45 } });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Mark all 45 todos as active" }));
+
+    expect(setAll).toHaveBeenCalledWith(false);
   });
 });
