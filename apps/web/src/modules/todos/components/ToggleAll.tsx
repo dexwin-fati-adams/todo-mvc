@@ -65,17 +65,13 @@ export function ToggleAll({
           {label}
         </label>
         <div aria-live="polite">
-          {statusText !== "" && (
-            <p role="status" className="text-sm text-slate-700">
-              {statusText}
-            </p>
-          )}
-        </div>
-        {alertText !== "" && (
-          <p role="alert" className="text-sm text-red-700">
-            {alertText}
+          <p role="status" className="text-sm text-slate-700">
+            {statusText}
           </p>
-        )}{" "}
+        </div>
+        <p role="alert" className="text-sm text-red-700">
+          {alertText}
+        </p>
       </div>
       <p id={helpId} className="text-sm text-slate-500">
         {helpText}
