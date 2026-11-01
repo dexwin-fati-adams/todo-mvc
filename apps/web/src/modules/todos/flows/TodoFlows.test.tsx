@@ -9,6 +9,7 @@ import { type PageSize } from "@/modules/todos/flows/pageSize";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
 import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 import { useReplaceTodo } from "@/modules/todos/hooks/useReplaceTodo";
+
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
 
 vi.mock("@/modules/todos/hooks/useTodos");
@@ -35,6 +36,11 @@ const doneTodo: Todo = {
 };
 
 const toggle = vi.fn<(id: string, body: UpdateTodoRequest) => Promise<ToggleOutcome>>();
+const { setAll } = vi.hoisted(() => ({ setAll: vi.fn() }));
+
+vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
+  useSetAllCompleted: () => ({ setAll }),
+}));
 
 function hookResult(overrides: Partial<HookResult>): HookResult {
   return {
@@ -127,6 +133,8 @@ beforeEach(() => {
     replace: vi.fn().mockResolvedValue(ok(todo)),
     refresh: vi.fn().mockResolvedValue(undefined),
   });
+  setAll.mockReset();
+  setAll.mockResolvedValue(ok({ updatedCount: 45 }));
 });
 
 describe("TodoFlows", () => {
@@ -828,6 +836,45 @@ describe("TodoFlows completion checkbox", () => {
   });
 });
 
+describe("TodoFlows row messages", () => {
+  it("shows the exact stale message for a 404", async () => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValue(err({ type: "API_ERROR", status: 404, message: "Todo not found" }));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This todo no longer exists. The list has been refreshed.",
+    );
+  });
+
+  it("shows the exact failure message for any other error", async () => {
+    givenHook({ todos: [todo] });
+    toggle.mockResolvedValue(err({ type: "PARSE_ERROR", message: "bad json" }));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not update this todo. Please try again.",
+    );
+  });
+
+  it("keeps a failed row's message while another row is toggled successfully", async () => {
+    givenHook({ todos: [todo, doneTodo] });
+    toggle.mockResolvedValueOnce(err({ type: "NETWORK_ERROR", message: "Offline" }));
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+    await screen.findByRole("alert");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Walk the dog" }));
+
+    const [first] = screen.getAllByRole("listitem");
+    expect(within(first!).getByRole("alert")).toBeInTheDocument();
+  });
+});
+
 describe("TodoFlows pagination", () => {
   //Test 55
   it.each<TodoServerState>([
@@ -1204,5 +1251,134 @@ describe("TodoFlows pagination", () => {
 
     expect(screen.getByText("Page 1")).toBeInTheDocument();
     expect(nextButton()).toBeDisabled();
+  });
+});
+
+describe("TodoFlows recovery details", () => {
+  it("keeps status and search in the URL when it recovers from a page past the end", async () => {
+    window.history.replaceState(null, "", "/?status=completed&search=milk&page=9");
+    givenHookByPage((page) =>
+      page === 9
+        ? hookResult({ serverState: "empty", pagination: pageInfo(9, 3, { totalItems: 45 }) })
+        : hookResult({ todos: [doneTodo], pagination: pageInfo(page, 3, { totalItems: 45 }) }),
+    );
+
+    render(<TodoFlows />);
+
+    await screen.findByText("Page 9 does not exist. Showing page 3.");
+    expect(window.location.search).toBe("?status=completed&search=milk&page=3");
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "completed",
+      search: "milk",
+      page: 3,
+      pageSize: 20,
+    });
+  });
+
+  it("keeps the page size in the URL when it recovers from a page past the end", async () => {
+    window.history.replaceState(null, "", "/?page=9&pageSize=10");
+    givenHookByPage((page, pageSize) =>
+      page === 9
+        ? hookResult({
+            serverState: "empty",
+            pagination: pageInfo(9, 3, { totalItems: 25, pageSize }),
+          })
+        : hookResult({
+            todos: [todo],
+            pagination: pageInfo(page, 3, { totalItems: 25, pageSize }),
+          }),
+    );
+
+    render(<TodoFlows />);
+
+    await screen.findByText("Page 9 does not exist. Showing page 3.");
+    expect(window.location.search).toBe("?page=3&pageSize=10");
+  });
+
+  it("does not recover from an empty response that belongs to a different page than the one asked for", () => {
+    window.history.replaceState(null, "", "/?page=9");
+    givenHookByPage(() =>
+      hookResult({ serverState: "empty", pagination: pageInfo(1, 3, { totalItems: 45 }) }),
+    );
+
+    render(<TodoFlows />);
+
+    expect(window.location.search).toBe("?page=9");
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+
+  it("does not recover when the page failed to load", () => {
+    window.history.replaceState(null, "", "/?page=9");
+    givenHookByPage(() =>
+      hookResult({
+        serverState: "initial-failure",
+        error: { type: "NETWORK_ERROR", message: "Offline" },
+      }),
+    );
+
+    render(<TodoFlows />);
+
+    expect(window.location.search).toBe("?page=9");
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+
+  it("does not recover while the page is still loading", () => {
+    window.history.replaceState(null, "", "/?page=9");
+    givenHookByPage(() => hookResult({ serverState: "initial-loading" }));
+
+    render(<TodoFlows />);
+
+    expect(window.location.search).toBe("?page=9");
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("TodoFlows toggle all", () => {
+  // 47
+  it("renders the control above the list with the full-collection label", () => {
+    givenHook({ todos: [todo], counts: { active: 3, completed: 2 } });
+    render(<TodoFlows />);
+
+    const control = screen.getByRole("checkbox", { name: "Mark all 5 todos as complete" });
+    const list = screen.getByRole("list");
+    expect(control.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not render the control when there are no counts", () => {
+    givenHook({ todos: [todo], counts: null });
+    render(<TodoFlows />);
+
+    expect(screen.queryByRole("checkbox", { name: /mark all/i })).not.toBeInTheDocument();
+  });
+
+  it("does not render the control when there are no todos at all", () => {
+    givenHook({ serverState: "empty", counts: { active: 0, completed: 0 } });
+    render(<TodoFlows />);
+
+    expect(screen.queryByRole("checkbox", { name: /mark all/i })).not.toBeInTheDocument();
+  });
+
+  it("sends only the boolean, even on page 2 of a filtered search", async () => {
+    window.history.replaceState(null, "", "/?status=active&search=milk&page=2");
+    givenHook({
+      todos: [todo],
+      counts: { active: 30, completed: 15 },
+      pagination: pageInfo(2, 3, { totalItems: 45 }),
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Mark all 45 todos as complete" }));
+
+    expect(setAll).toHaveBeenCalledTimes(1);
+    expect(setAll).toHaveBeenCalledWith(true);
+  });
+
+  it("sends false when every todo is complete", async () => {
+    givenHook({ todos: [doneTodo], counts: { active: 0, completed: 45 } });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Mark all 45 todos as active" }));
+
+    expect(setAll).toHaveBeenCalledWith(false);
   });
 });

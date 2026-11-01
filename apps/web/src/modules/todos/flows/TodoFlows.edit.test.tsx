@@ -14,6 +14,9 @@ vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
 vi.mock("@/modules/todos/hooks/useDeleteTodo");
 vi.mock("@/modules/todos/hooks/useReplaceTodo");
+vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
+  useSetAllCompleted: () => ({ setAll: vi.fn().mockResolvedValue(ok({ updatedCount: 0 })) }),
+}));
 
 type SaveOutcome = Result<Todo, ClientError>;
 

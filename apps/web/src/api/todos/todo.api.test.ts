@@ -644,6 +644,106 @@ describe("todoApi.remove", () => {
   });
 });
 
+describe("todoApi.setAllCompleted", () => {
+  const updated = { updatedCount: 45 };
+
+  it("sends PATCH /todos with a JSON body and a Content-Type header", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(updated)));
+
+    await todoApi.setAllCompleted(true);
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toMatch(/\/todos$/);
+    expect(init?.method).toBe("PATCH");
+    expect(init?.body).toBe(JSON.stringify({ completed: true }));
+    expect(init?.headers).toEqual({
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("sends only the completed field, as an absolute value", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(updated)));
+
+    await todoApi.setAllCompleted(false);
+
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ completed: false }));
+  });
+
+  it("has no query string, so no status, search or page can be sent", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse(updated)));
+
+    await todoApi.setAllCompleted(true);
+
+    expect(fetchMock.mock.calls[0]?.[0]).not.toContain("?");
+  });
+
+  it("returns the parsed updatedCount for a 200 response", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse(updated)));
+
+    const result = await todoApi.setAllCompleted(true);
+
+    expect(result._unsafeUnwrap()).toEqual(updated);
+  });
+
+  it("returns ok with updatedCount 0 when there were no todos", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: 0 })));
+
+    const result = await todoApi.setAllCompleted(true);
+
+    expect(result._unsafeUnwrap()).toEqual({ updatedCount: 0 });
+  });
+
+  it("returns PARSE_ERROR when the 200 body fails the schema", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: "many" })));
+
+    const result = await todoApi.setAllCompleted(true);
+
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+  });
+
+  it("returns API_ERROR with status and message for a 400", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "VALIDATION_ERROR", message: "Invalid body" }, 400)),
+    );
+
+    const result = await todoApi.setAllCompleted(true);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 400,
+      message: "Invalid body",
+    });
+  });
+
+  it("returns API_ERROR with status and message for a 503", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Try again later" }, 503),
+      ),
+    );
+
+    const result = await todoApi.setAllCompleted(true);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "API_ERROR",
+      status: 503,
+      message: "Try again later",
+    });
+  });
+
+  it("returns NETWORK_ERROR when fetch throws", async () => {
+    stubFetch(() => Promise.reject(new TypeError("Failed to fetch")));
+
+    const result = await todoApi.setAllCompleted(true);
+
+    expect(result._unsafeUnwrapErr()).toEqual({
+      type: "NETWORK_ERROR",
+      message: "Failed to fetch",
+    });
+  });
+});
+
 describe("formatError", () => {
   it("formats each error type", () => {
     expect(formatError({ type: "API_ERROR", status: 503, message: "Down" })).toBe(
