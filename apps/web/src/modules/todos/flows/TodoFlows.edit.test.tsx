@@ -14,6 +14,12 @@ vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
 vi.mock("@/modules/todos/hooks/useDeleteTodo");
 vi.mock("@/modules/todos/hooks/useReplaceTodo");
+vi.mock("@/modules/todos/hooks/useClearCompleted", () => ({
+  useClearCompleted: () => ({
+    clear: vi.fn().mockResolvedValue(ok({ deletedCount: 0 })),
+    refresh: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
 vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
   useSetAllCompleted: () => ({ setAll: vi.fn().mockResolvedValue(ok({ updatedCount: 0 })) }),
 }));
