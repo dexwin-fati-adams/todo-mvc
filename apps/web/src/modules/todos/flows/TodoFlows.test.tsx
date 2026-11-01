@@ -42,6 +42,12 @@ vi.mock("@/modules/todos/hooks/useSetAllCompleted", () => ({
   useSetAllCompleted: () => ({ setAll }),
 }));
 
+const { clear } = vi.hoisted(() => ({ clear: vi.fn() }));
+
+vi.mock("@/modules/todos/hooks/useClearCompleted", () => ({
+  useClearCompleted: () => ({ clear }),
+}));
+
 function hookResult(overrides: Partial<HookResult>): HookResult {
   return {
     serverState: "ready",
@@ -135,6 +141,8 @@ beforeEach(() => {
   });
   setAll.mockReset();
   setAll.mockResolvedValue(ok({ updatedCount: 45 }));
+  clear.mockReset();
+  clear.mockResolvedValue(ok({ deletedCount: 20 }));
 });
 
 describe("TodoFlows", () => {
@@ -1380,5 +1388,63 @@ describe("TodoFlows toggle all", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Mark all 45 todos as active" }));
 
     expect(setAll).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("TodoFlows clear completed", () => {
+  // 51
+  it("renders the button between the list and the page bar with the full-collection label", () => {
+    givenHook({ todos: [doneTodo], counts: { active: 25, completed: 20 } });
+    render(<TodoFlows />);
+
+    const button = screen.getByRole("button", { name: "Clear all 20 completed todos" });
+    const list = screen.getByRole("list");
+    const pageBar = screen.getByRole("navigation", { name: "Pagination" });
+    expect(button.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(button.compareDocumentPosition(pageBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not render the button when no todo is completed", () => {
+    givenHook({ todos: [todo], counts: { active: 3, completed: 0 } });
+    render(<TodoFlows />);
+
+    expect(screen.queryByRole("button", { name: /clear .*completed/i })).not.toBeInTheDocument();
+  });
+
+  it("does not render the button when there are no counts", () => {
+    givenHook({ todos: [doneTodo], counts: null });
+    render(<TodoFlows />);
+
+    expect(screen.queryByRole("button", { name: /clear .*completed/i })).not.toBeInTheDocument();
+  });
+
+  it("sends no scope, even on page 2 of a filtered search", async () => {
+    window.history.replaceState(null, "", "/?status=completed&search=milk&page=2");
+    givenHook({
+      todos: [doneTodo],
+      counts: { active: 25, completed: 20 },
+      pagination: pageInfo(2, 3, { totalItems: 45 }),
+    });
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear all 20 completed todos" }));
+
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledWith();
+  });
+
+  // 52
+  it("does not use the single-delete flow, and moves focus to the message after a keyboard clear", async () => {
+    const remove = vi.fn().mockResolvedValue(ok(undefined));
+    vi.mocked(useDeleteTodo).mockReturnValue({ remove });
+    givenHook({ todos: [doneTodo], counts: { active: 25, completed: 20 } });
+    render(<TodoFlows />);
+    screen.getByRole("button", { name: "Clear all 20 completed todos" }).focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    const message = await screen.findByText("Deleted 20 completed todos.");
+    await waitFor(() => expect(message).toHaveFocus());
+    expect(remove).not.toHaveBeenCalled();
   });
 });
