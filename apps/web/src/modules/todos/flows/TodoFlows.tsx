@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { match, P } from "ts-pattern";
 import { SEARCH_MAX_LENGTH, type Status, type Todo } from "contracts";
 import type { ClientError } from "@/api/todos/todo.api";
+import { ClearCompleted } from "@/modules/todos/components/ClearCompleted";
 import { Pagination } from "@/modules/todos/components/Pagination";
 import { SearchBox } from "@/modules/todos/components/SearchBox";
 import { StatusFilter } from "@/modules/todos/components/StatusFilter";
 import { ToggleAll } from "@/modules/todos/components/ToggleAll";
 import { buildListUrl } from "@/modules/todos/flows/buildListUrl";
 import { resolvePage } from "@/modules/todos/flows/resolvePage";
+import { useClearCompletedFlow } from "@/modules/todos/flows/useClearCompletedFlow";
 import { useLastPagination } from "@/modules/todos/flows/useLastPagination";
 import { useListParams } from "@/modules/todos/flows/useListParams";
 import { useToggleAllFlow } from "@/modules/todos/flows/useToggleAllFlow";
@@ -90,6 +92,14 @@ export function TodoFlows() {
     counts,
     listIsSettled: serverState !== "initial-loading",
     viewKey,
+  });
+
+  //Clear completed always means every completed todo. It reads only the counts, never the rows on screen.
+  const clearCompleted = useClearCompletedFlow({
+    counts:
+      counts === null ? null : { activeCount: counts.active, completedCount: counts.completed },
+    listIsSettled: serverState !== "initial-loading",
+    listKey: viewKey,
   });
 
   //Plain values for the recovery effect, so its dependency list is complete and honest.
@@ -217,6 +227,7 @@ export function TodoFlows() {
         deleting={deleting}
         emptyMessage={emptyMessageFor(status, search)}
       />
+      <ClearCompleted {...clearCompleted} />
       {visibleNotice !== null && (
         <p
           ref={noticeRef}

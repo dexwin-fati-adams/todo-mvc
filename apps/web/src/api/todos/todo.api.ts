@@ -2,6 +2,7 @@ import { match, P } from "ts-pattern";
 import { err, errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow";
 import type { z } from "zod";
 import {
+  DeleteCompletedResponseSchema,
   ErrorResponseSchema,
   ReplaceTodoRequestSchema,
   SetAllCompletedResponseSchema,
@@ -150,4 +151,8 @@ export const todoApi = {
       method: "PATCH",
       body: JSON.stringify({ completed }),
     }),
+  //clearCompleted deletes EVERY completed todo, not only the page on screen. The query is always exactly ?status=completed, and there
+  // is no body, so no search or page can go with it. The server answers with { deletedCount }.
+  clearCompleted: () =>
+    request("/todos?status=completed", DeleteCompletedResponseSchema, { method: "DELETE" }),
 };

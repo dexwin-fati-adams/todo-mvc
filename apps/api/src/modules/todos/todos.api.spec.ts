@@ -2290,6 +2290,734 @@ test.describe("Pagination (browser)", () => {
   });
 });
 
+// M44 browser tests 50 to 62: the toggle-all checkbox, together with the list, the counts and the page bar.
+// Each test runs against the real API and the real test database.
+// The checkbox always means EVERY todo, so the tests check the whole collection through the API and not only the rows on screen.
+// The tests use the checkbox label, its role and the API. They do not depend on the exact wording of the messages.
+test.describe("Toggle all todos (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const CORS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "*",
+  };
+  const isTodosCollection = (url: URL) => url.port === "4001" && url.pathname === "/todos";
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+
+  // Makes `active` active todos and `completed` completed todos through the real API.
+  async function seedMixed(
+    request: APIRequestContext,
+    active: number,
+    completed: number,
+  ): Promise<void> {
+    for (let i = 1; i <= active; i += 1) {
+      await createTodo(request, `Active todo ${i}`);
+    }
+    for (let i = 1; i <= completed; i += 1) {
+      const title = `Done todo ${i}`;
+      const created = await createTodo(request, title);
+      await request.put(`/todos/${created.id}`, { data: { title, completed: true } });
+    }
+  }
+
+  // The label names the action and the whole collection's total, never the page size.
+  const toggleAll = (page: Page, total: number, state: "complete" | "active") =>
+    page.getByRole("checkbox", {
+      name: total === 1 ? `Mark the 1 todo as ${state}` : `Mark all ${total} todos as ${state}`,
+    });
+  const anyToggleAll = (page: Page) =>
+    page.getByRole("checkbox", { name: /^Mark (all \d+ todos|the 1 todo) as (complete|active)$/ });
+  const rows = (page: Page) => page.getByRole("listitem");
+  const filterLink = (page: Page, label: "All" | "Active" | "Completed") =>
+    page
+      .getByRole("navigation", { name: "Filter todos" })
+      .getByRole("link", { name: new RegExp(`^${label}`) });
+
+  async function listOf(request: APIRequestContext, query = ""): Promise<TodoListResponse> {
+    return (await (await request.get(`/todos?pageSize=100${query}`)).json()) as TodoListResponse;
+  }
+
+  // Presses Tab until the element has focus, the way a keyboard user would.
+  async function tabTo(page: Page, target: ReturnType<Page["getByRole"]>): Promise<void> {
+    for (let i = 0; i < 120; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await target.evaluate((element) => element === document.activeElement)) {
+        return;
+      }
+    }
+  }
+
+  // 50
+  test("the label's total is the whole list for All, Active, Completed and a search", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 25, 20);
+    const whole = await listOf(request);
+    expect(whole.activeCount + whole.completedCount).toBe(45);
+
+    for (const url of ["/", "/?status=active", "/?status=completed", "/?search=Active"]) {
+      await page.goto(`${WEB_URL}${url}`);
+      await expect(toggleAll(page, 45, "complete")).toBeVisible();
+    }
+    // If this fails, the counts follow the search, and that is backend work to record, not to hide in the client.
+    const searched = await listOf(request, "&search=Active");
+    expect(searched.activeCount + searched.completedCount).toBe(45);
+  });
+
+  // 51
+  test("with a mix of todos the label offers to mark all complete, and the checkbox is unchecked", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 25, 20);
+    await page.goto(WEB_URL);
+
+    await expect(rows(page)).toHaveCount(20);
+    await expect(toggleAll(page, 45, "complete")).toBeVisible();
+    await expect(toggleAll(page, 45, "complete")).not.toBeChecked();
+    await expect(toggleAll(page, 45, "complete")).toBeEnabled();
+  });
+
+  // 52
+  test("clicking sends exactly one PATCH to /todos with the body {completed: true} and nothing else", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    const patches: { url: string; body: string | null }[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PATCH" && isTodosCollection(new URL(req.url()))) {
+        patches.push({ url: req.url(), body: req.postData() });
+      }
+    });
+    await page.goto(WEB_URL);
+
+    await toggleAll(page, 5, "complete").click();
+
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+    expect(patches).toHaveLength(1);
+    expect(new URL(patches[0]!.url).search).toBe("");
+    expect(patches[0]!.body).toBe(JSON.stringify({ completed: true }));
+  });
+
+  // 53
+  test("from page 2 of a filtered search it completes every todo, including other pages and todos outside the search", async ({
+    page,
+    request,
+  }) => {
+    // 24 active "Active todo" + 1 active "Zebra" (does not match the search "todo") + 20 completed = 45 todos.
+    for (let i = 1; i <= 24; i += 1) {
+      await createTodo(request, `Active todo ${i}`);
+    }
+    await createTodo(request, "Zebra");
+    for (let i = 1; i <= 20; i += 1) {
+      const title = `Done todo ${i}`;
+      const created = await createTodo(request, title);
+      await request.put(`/todos/${created.id}`, { data: { title, completed: true } });
+    }
+    await page.goto(`${WEB_URL}/?status=active&search=todo&page=2`);
+    await expect(toggleAll(page, 45, "complete")).toBeVisible();
+
+    await toggleAll(page, 45, "complete").click();
+
+    await expect.poll(async () => (await listOf(request)).activeCount).toBe(0);
+    const all = await listOf(request);
+    expect(all.totalItems).toBe(45);
+    expect(all.todos.every((todo) => todo.completed)).toBe(true);
+    expect(all.todos.some((todo) => todo.title === "Zebra" && todo.completed)).toBe(true);
+  });
+
+  // 54
+  test("after success the rows, the counts and the label refresh with no reload", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    // A marker on the window is lost if the page reloads, so it proves there was no reload.
+    await page.evaluate(() => {
+      (window as unknown as Record<string, unknown>).__noReload = true;
+    });
+
+    await toggleAll(page, 5, "complete").click();
+
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+    await expect(filterLink(page, "Active")).toHaveText(/Active\s*\(0\)/);
+    await expect(filterLink(page, "Completed")).toHaveText(/Completed\s*\(5\)/);
+    for (const title of ["Active todo 1", "Active todo 2", "Active todo 3", "Done todo 1"]) {
+      await expect(page.getByRole("checkbox", { name: title })).toBeChecked();
+    }
+    expect(
+      await page.evaluate(() => (window as unknown as Record<string, unknown>).__noReload),
+    ).toBe(true);
+  });
+
+  // 55
+  test("clicking again sends {completed: false} and every todo is active again", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    const bodies: (string | null)[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PATCH" && isTodosCollection(new URL(req.url()))) {
+        bodies.push(req.postData());
+      }
+    });
+    await page.goto(WEB_URL);
+    await toggleAll(page, 5, "complete").click();
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+
+    await toggleAll(page, 5, "active").click();
+
+    await expect(toggleAll(page, 5, "complete")).not.toBeChecked();
+    expect(bodies).toEqual([
+      JSON.stringify({ completed: true }),
+      JSON.stringify({ completed: false }),
+    ]);
+    const all = await listOf(request);
+    expect(all.completedCount).toBe(0);
+    expect(all.activeCount).toBe(5);
+  });
+
+  // 56
+  test("while the request is held the checkbox is disabled, and a second click sends no second request", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    const patches: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PATCH" && isTodosCollection(new URL(req.url()))) {
+        patches.push(req.url());
+      }
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(isTodosCollection, async (route) => {
+      if (route.request().method() === "PATCH") {
+        await held;
+      }
+      await route.continue();
+    });
+    await page.goto(WEB_URL);
+
+    const checkbox = toggleAll(page, 5, "complete");
+    await checkbox.click();
+
+    await expect(checkbox).toBeDisabled();
+    await checkbox.click({ force: true });
+    await page.keyboard.press("Space");
+
+    release();
+
+    await expect(toggleAll(page, 5, "active")).toBeEnabled();
+    expect(patches).toHaveLength(1);
+    expect((await listOf(request)).activeCount).toBe(0);
+  });
+
+  // 57
+  test("a 503 shows a safe message, leaves the list as it was, and a retry works", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    const failPatches = (route: Route) =>
+      route.request().method() === "PATCH"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodosCollection, failPatches);
+    await page.goto(WEB_URL);
+
+    const checkbox = toggleAll(page, 5, "complete");
+    await checkbox.click();
+
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toBeVisible();
+    await expect(checkbox).toBeEnabled();
+    await expect(checkbox).not.toBeChecked();
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    expect((await listOf(request)).activeCount).toBe(3);
+
+    await page.unroute(isTodosCollection, failPatches);
+    await checkbox.click();
+
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
+    expect((await listOf(request)).activeCount).toBe(0);
+  });
+
+  // 58
+  test("on page 3 of the Active filter, marking all complete recovers to a valid page and shows the empty message", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 45, 0);
+    await page.goto(`${WEB_URL}/?status=active&page=3`);
+    await expect(rows(page)).toHaveCount(5);
+
+    await toggleAll(page, 45, "complete").click();
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page).not.toHaveURL(/page=3/);
+    await expect(page).toHaveURL(/status=active/);
+    await expect(rows(page)).toHaveCount(0);
+  });
+
+  // 59
+  test("with no todos there is no toggle-all checkbox on the page", async ({ page }) => {
+    await page.goto(WEB_URL);
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(anyToggleAll(page)).toHaveCount(0);
+  });
+
+  // 60
+  test("keyboard: Space on the checkbox marks everything complete, and focus stays on the checkbox", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    await tabTo(page, toggleAll(page, 5, "complete"));
+    await expect(toggleAll(page, 5, "complete")).toBeFocused();
+
+    await page.keyboard.press("Space");
+
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+    await expect(toggleAll(page, 5, "active")).toBeFocused();
+    expect((await listOf(request)).activeCount).toBe(0);
+  });
+
+  // 61
+  test("the checkbox shows a visible focus outline and is described by the help text", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+
+    const checkbox = toggleAll(page, 5, "complete");
+    await tabTo(page, checkbox);
+    await expect(checkbox).toBeFocused();
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await expect(checkbox).toHaveCSS("outline-width", "2px");
+
+    const describedBy = await checkbox.getAttribute("aria-describedby");
+    expect(describedBy).not.toBeNull();
+    await expect(page.locator(`[id="${describedBy}"]`)).toContainText(/every todo/i);
+  });
+
+  // 62
+  test("after success a reload shows the same state from the server", async ({ page, request }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await toggleAll(page, 5, "complete").click();
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+
+    await page.reload();
+
+    await expect(toggleAll(page, 5, "active")).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Active todo 1" })).toBeChecked();
+  });
+});
+
+// M46 browser tests 55 to 68: the clear-completed button, together with the list, the counts and the page bar.
+// Each test runs against the real API and the real test database.
+// The button always means EVERY completed todo, so the tests check the whole collection through the API and not only the rows on screen.
+// The default page size is 20, so 25 active + 20 completed todos make 45 todos on 3 pages.
+test.describe("Clear completed todos (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const CORS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "*",
+    "access-control-allow-methods": "*",
+  };
+  const isTodosCollection = (url: URL) => url.port === "4001" && url.pathname === "/todos";
+  const unavailable = { error: "SERVICE_UNAVAILABLE", message: "internal-db-detail-xyz" };
+  const HELP =
+    "This deletes every completed todo, including other pages and filters. It cannot be undone.";
+  const FAILED = "Could not clear completed todos. Please try again.";
+
+  // Makes `active` active todos and `completed` completed todos through the real API, plus any extra completed titles.
+  async function seedMixed(
+    request: APIRequestContext,
+    active: number,
+    completed: number,
+    extraCompleted: string[] = [],
+  ): Promise<void> {
+    for (let i = 1; i <= active; i += 1) {
+      await createTodo(request, `Active todo ${i}`);
+    }
+    const doneTitles = [
+      ...Array.from({ length: completed - extraCompleted.length }, (_, i) => `Done todo ${i + 1}`),
+      ...extraCompleted,
+    ];
+    for (const title of doneTitles) {
+      const created = await createTodo(request, title);
+      await request.put(`/todos/${created.id}`, { data: { title, completed: true } });
+    }
+  }
+
+  // The button text is the full-collection label, so the number in it is the number of completed todos in the whole list.
+  const clearButton = (page: Page, count: number) =>
+    page.getByRole("button", {
+      name: count === 1 ? "Clear the 1 completed todo" : `Clear all ${count} completed todos`,
+    });
+  const anyClearButton = (page: Page) =>
+    page.getByRole("button", { name: /^Clear (all \d+ completed todos|the 1 completed todo)$/ });
+  const rows = (page: Page) => page.getByRole("listitem");
+  const pageBar = (page: Page) => page.getByRole("navigation", { name: "Pagination" });
+  const filterLink = (page: Page, label: "All" | "Active" | "Completed") =>
+    page
+      .getByRole("navigation", { name: "Filter todos" })
+      .getByRole("link", { name: new RegExp(`^${label}`) });
+
+  async function completedCountOf(request: APIRequestContext, query = ""): Promise<number> {
+    const list = (await (await request.get(`/todos${query}`)).json()) as TodoListResponse;
+    return list.completedCount;
+  }
+
+  // Presses Tab until the element has focus, the way a keyboard user would.
+  async function tabTo(page: Page, target: ReturnType<Page["getByRole"]>): Promise<void> {
+    for (let i = 0; i < 120; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await target.evaluate((element) => element === document.activeElement)) {
+        return;
+      }
+    }
+  }
+
+  // 55
+  test("shows a full-collection label and the help text for 20 completed todos on 3 pages", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 25, 20);
+    await page.goto(WEB_URL);
+
+    await expect(rows(page)).toHaveCount(20);
+    await expect(clearButton(page, 20)).toBeVisible();
+    await expect(clearButton(page, 20)).toBeEnabled();
+    await expect(page.getByText(HELP)).toBeVisible();
+  });
+
+  // 56
+  test("the number in the label is the completedCount of the whole list for All, Active, Completed and a search", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 25, 20);
+    const whole = await completedCountOf(request);
+    expect(whole).toBe(20);
+
+    for (const url of ["/", "/?status=active", "/?status=completed", "/?search=Active"]) {
+      await page.goto(`${WEB_URL}${url}`);
+      await expect(clearButton(page, whole)).toBeVisible();
+    }
+    // The search says "Active", so only active todos match it. The API still reports every completed todo in the list.
+    // If this fails, the counts follow the search, and that is backend work to record, not to hide in the client.
+    expect(await completedCountOf(request, "?search=Active")).toBe(whole);
+  });
+
+  // 57
+  test("there is no button when no todo is completed", async ({ page, request }) => {
+    await seedMixed(request, 3, 0);
+    await page.goto(WEB_URL);
+
+    await expect(rows(page)).toHaveCount(3);
+    await expect(anyClearButton(page)).toHaveCount(0);
+  });
+
+  // 58
+  test("clicking sends exactly one DELETE to /todos?status=completed, with no body", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 25, 20);
+    const deletes: { url: string; body: string | null }[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "DELETE") deletes.push({ url: req.url(), body: req.postData() });
+    });
+    await page.goto(WEB_URL);
+
+    await clearButton(page, 20).click();
+
+    await expect(page.getByText("Deleted 20 completed todos.")).toBeVisible();
+    expect(deletes).toHaveLength(1);
+    const sent = new URL(deletes[0]!.url);
+    expect(sent.port).toBe("4001");
+    expect(sent.pathname).toBe("/todos");
+    expect(sent.search).toBe("?status=completed");
+    expect(deletes[0]!.body).toBeNull();
+  });
+
+  // 59
+  test("from page 2 of a search it deletes every completed todo, including those on other pages and outside the search", async ({
+    page,
+    request,
+  }) => {
+    // 25 active + 19 "Done todo" + 1 "Zebra" = 20 completed. "Zebra" does not match the search "todo".
+    await seedMixed(request, 25, 20, ["Zebra"]);
+    await page.goto(`${WEB_URL}/?search=todo&page=2`);
+    await expect(clearButton(page, 20)).toBeVisible();
+
+    await clearButton(page, 20).click();
+
+    await expect(page.getByText("Deleted 20 completed todos.")).toBeVisible();
+    const all = (await (await request.get("/todos?pageSize=100")).json()) as TodoListResponse;
+    expect(all.totalItems).toBe(25);
+    expect(all.completedCount).toBe(0);
+    expect(all.todos.every((todo) => !todo.completed)).toBe(true);
+    expect(all.todos.some((todo) => todo.title === "Zebra")).toBe(false);
+  });
+
+  // 60
+  test("after success the rows, the counts and the page bar refresh with no reload, and the button is gone", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 25, 20);
+    await page.goto(WEB_URL);
+    await expect(page.getByText("Page 1 of 3")).toBeVisible();
+    // A marker on the window is lost if the page reloads, so it proves there was no reload.
+    await page.evaluate(() => {
+      (window as unknown as Record<string, unknown>).__noReload = true;
+    });
+
+    await clearButton(page, 20).click();
+
+    await expect(page.getByText("Deleted 20 completed todos.")).toBeVisible();
+    await expect(anyClearButton(page)).toHaveCount(0);
+    await expect(page.getByText("Page 1 of 2")).toBeVisible();
+    await expect(rows(page)).toHaveCount(20);
+    await expect(filterLink(page, "All")).toContainText("25");
+    await expect(filterLink(page, "Completed")).toHaveText(/Completed\s*\(0\)/);
+    await expect(pageBar(page)).toBeVisible();
+    expect(
+      await page.evaluate(() => (window as unknown as Record<string, unknown>).__noReload),
+    ).toBe(true);
+  });
+
+  // 61
+  test("every active todo is still there afterwards, with the same titles", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    await clearButton(page, 2).click();
+
+    await expect(page.getByText("Deleted 2 completed todos.")).toBeVisible();
+    await expect(rows(page)).toHaveCount(3);
+    for (const title of ["Active todo 1", "Active todo 2", "Active todo 3"]) {
+      await expect(page.getByRole("checkbox", { name: title })).toBeVisible();
+    }
+    await expect(page.getByRole("checkbox", { name: /^Done todo/ })).toHaveCount(0);
+  });
+
+  // 62
+  test("on page 2 of the Completed filter, clearing recovers to a valid page and shows the normal empty message", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 20, 25);
+    await page.goto(`${WEB_URL}/?status=completed&page=2`);
+    await expect(rows(page)).toHaveCount(5);
+
+    await clearButton(page, 25).click();
+
+    await expect(page.getByText("No completed todos.")).toBeVisible();
+    await expect(page).not.toHaveURL(/page=/);
+    await expect(page).toHaveURL(/status=completed/);
+    await expect(rows(page)).toHaveCount(0);
+  });
+
+  // 63
+  test("while the request is held the button is disabled and says it is clearing, and a second click sends no second request", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    const deletes: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "DELETE") deletes.push(req.url());
+    });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(isTodosCollection, async (route) => {
+      if (route.request().method() === "DELETE") {
+        await held;
+      }
+      await route.continue();
+    });
+    await page.goto(WEB_URL);
+
+    const button = clearButton(page, 2);
+    await button.click();
+
+    await expect(
+      page.getByRole("status").filter({ hasText: "Clearing completed todos…" }),
+    ).toBeVisible();
+    await expect(button).toBeDisabled();
+    await button.click({ force: true });
+    await page.keyboard.press("Enter");
+
+    release();
+
+    await expect(page.getByText("Deleted 2 completed todos.")).toBeVisible();
+    expect(deletes).toHaveLength(1);
+    expect(await completedCountOf(request)).toBe(0);
+  });
+
+  // 64
+  test("a 503 shows a safe message, keeps the list as it was, and a retry clears the completed todos", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    const failDeletes = (route: Route) =>
+      route.request().method() === "DELETE"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue();
+    await page.route(isTodosCollection, failDeletes);
+    await page.goto(WEB_URL);
+
+    const button = clearButton(page, 2);
+    await button.click();
+
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(FAILED);
+    await expect(rows(page)).toHaveCount(5);
+    await expect(button).toBeEnabled();
+    await expect(page.locator("body")).not.toContainText("internal-db-detail-xyz");
+    await expect(page.locator("body")).not.toContainText("SERVICE_UNAVAILABLE");
+    expect(await completedCountOf(request)).toBe(2);
+
+    await page.unroute(isTodosCollection, failDeletes);
+    await button.click();
+
+    await expect(page.getByText("Deleted 2 completed todos.")).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
+    expect(await completedCountOf(request)).toBe(0);
+  });
+
+  // 65
+  test("keyboard: Enter on the button clears, and focus moves to the success message", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    const button = clearButton(page, 2);
+    await tabTo(page, button);
+    await expect(button).toBeFocused();
+
+    await page.keyboard.press("Enter");
+
+    const message = page.getByText("Deleted 2 completed todos.");
+    await expect(message).toBeVisible();
+    await expect(message).toBeFocused();
+    await expect(anyClearButton(page)).toHaveCount(0);
+  });
+
+  test("keyboard: after a failed clear, focus goes back to the button", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.route(isTodosCollection, (route) =>
+      route.request().method() === "DELETE"
+        ? route.fulfill({ status: 503, headers: CORS, json: unavailable })
+        : route.continue(),
+    );
+    await page.goto(WEB_URL);
+
+    const button = clearButton(page, 2);
+    await tabTo(page, button);
+    await page.keyboard.press("Enter");
+
+    await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveText(FAILED);
+    await expect(button).toBeFocused();
+  });
+
+  // 66
+  test("the button shows a visible focus outline, and its name and description are the full-collection label and help text", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+
+    const button = clearButton(page, 2);
+    await tabTo(page, button);
+    await expect(button).toBeFocused();
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await expect(button).toHaveCSS("outline-width", "2px");
+
+    const describedBy = await button.getAttribute("aria-describedby");
+    expect(describedBy).not.toBeNull();
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(HELP);
+  });
+
+  // 67
+  test("if the completed todos were already cleared elsewhere, it says there was nothing to delete and refreshes the list", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    const cleared = await request.delete("/todos?status=completed");
+    expect(cleared.ok()).toBe(true);
+    await clearButton(page, 2).click();
+
+    await expect(page.getByText("There were no completed todos to delete.")).toBeVisible();
+    await expect(rows(page)).toHaveCount(3);
+    await expect(anyClearButton(page)).toHaveCount(0);
+  });
+
+  // 68
+  test("after success a reload shows the same state from the server, and with everything completed first, clearing leaves no todos", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await clearButton(page, 2).click();
+    await expect(page.getByText("Deleted 2 completed todos.")).toBeVisible();
+
+    await page.reload();
+
+    await expect(rows(page)).toHaveCount(3);
+    await expect(anyClearButton(page)).toHaveCount(0);
+    await expect(page.getByText("Deleted 2 completed todos.")).toHaveCount(0);
+
+    // Everything completed through the bulk endpoint first, then cleared from the page.
+    const marked = await request.patch("/todos", { data: { completed: true } });
+    expect(marked.ok()).toBe(true);
+    await page.reload();
+    await clearButton(page, 3).click();
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /^Mark (all|the)/ })).toHaveCount(0);
+    await expect(anyClearButton(page)).toHaveCount(0);
+    expect(await completedCountOf(request)).toBe(0);
+  });
+});
+
 let closed = false;
 test.afterAll(async () => {
   if (closed) return;
