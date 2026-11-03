@@ -98,6 +98,7 @@ export function TodoFlows() {
   const clearCompleted = useClearCompletedFlow({
     counts:
       counts === null ? null : { activeCount: counts.active, completedCount: counts.completed },
+    listIsSettled: serverState !== "initial-loading",
     listKey: viewKey,
   });
 

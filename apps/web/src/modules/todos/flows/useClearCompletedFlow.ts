@@ -21,6 +21,9 @@ export type ClearCompletedFlow = {
 export type UseClearCompletedFlowParams = {
   //null = no counts on screen right now (the list is loading or failed).
   counts: ToggleAllCounts | null;
+  //false only while the first response for the current key is still loading.
+  //When the list has failed or finished with no counts, old counts must not be shown.
+  listIsSettled: boolean;
   //This text changes whenever the status, search, page or page size changes. It clears the old message.
   listKey: string;
 };
@@ -53,6 +56,7 @@ const successMessage = (deletedCount: number): string => {
 // After a failure the button is still there, so focus goes back to it.
 export function useClearCompletedFlow({
   counts,
+  listIsSettled,
   listKey,
 }: UseClearCompletedFlowParams): ClearCompletedFlow {
   const { clear } = useClearCompleted();
@@ -73,7 +77,28 @@ export function useClearCompletedFlow({
   ) {
     setLastCounts(counts);
   }
-  const shown = counts ?? lastCounts;
+  //Bug 1: last counts are used only while the list is still loading. After a failure, show nothing.
+  const shown = counts ?? (listIsSettled ? null : lastCounts);
+
+  //Bug 2: after a successful delete, the old counts stay on screen until the refresh answers.
+  //If the refresh fails they never change, so the button must stay hidden. Fresh, different counts bring it back.
+  const [clearedAgainst, setClearedAgainst] = useState<ToggleAllCounts | null>(null);
+  if (
+    clearedAgainst !== null &&
+    counts !== null &&
+    (clearedAgainst.activeCount !== counts.activeCount ||
+      clearedAgainst.completedCount !== counts.completedCount)
+  ) {
+    setClearedAgainst(null);
+  }
+  const alreadyCleared =
+    clearedAgainst !== null &&
+    shown !== null &&
+    shown.activeCount === clearedAgainst.activeCount &&
+    shown.completedCount === clearedAgainst.completedCount;
+  const choice =
+    shown === null || alreadyCleared ? ({ kind: "none" } as const) : chooseClearCompleted(shown);
+  const buttonVisible = choice.kind === "clear";
 
   //A new page, status, search or page size drops an old success or failure message. A request that is running keeps its message.
   const [seenKey, setSeenKey] = useState(listKey);
@@ -97,8 +122,7 @@ export function useClearCompletedFlow({
   }, [outcome.status]);
 
   const onClear = () => {
-    if (savingRef.current || counts === null) return;
-    if (chooseClearCompleted(counts).kind === "none") return;
+    if (savingRef.current || counts === null || !buttonVisible) return;
 
     savingRef.current = true;
     refocusRef.current = buttonRef.current !== null && document.activeElement === buttonRef.current;
@@ -118,12 +142,10 @@ export function useClearCompletedFlow({
       .catch((): Outcome => ({ status: "failed", message: FAILED_MESSAGE }))
       .then((next) => {
         savingRef.current = false;
+        if (next.status === "succeeded") setClearedAgainst(counts);
         setOutcome(next);
       });
   };
-
-  const choice = shown === null ? ({ kind: "none" } as const) : chooseClearCompleted(shown);
-  const buttonVisible = choice.kind === "clear";
 
   const messageKind = match(outcome.status)
     .with("idle", (): ClearCompletedMessageKind | null => null)

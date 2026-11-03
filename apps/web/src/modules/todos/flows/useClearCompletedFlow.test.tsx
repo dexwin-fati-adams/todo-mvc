@@ -32,12 +32,14 @@ function deferred<T>() {
 //A small page that uses the flow and the real ClearCompleted, so focus and clicks behave like in the app.
 function Host({
   counts,
+  listIsSettled = true,
   listKey = "all||1|20",
 }: {
   counts: ToggleAllCounts | null;
+  listIsSettled?: boolean;
   listKey?: string;
 }) {
-  const flow = useClearCompletedFlow({ counts, listKey });
+  const flow = useClearCompletedFlow({ counts, listIsSettled, listKey });
   return <ClearCompleted {...flow} />;
 }
 
@@ -146,7 +148,7 @@ describe("useClearCompletedFlow", () => {
     const pending = deferred<ClearResult>();
     clear.mockReturnValue(pending.promise);
     const { result } = renderHook(() =>
-      useClearCompletedFlow({ counts: someCompleted, listKey: "k" }),
+      useClearCompletedFlow({ counts: someCompleted, listIsSettled: true, listKey: "k" }),
     );
 
     act(() => {
@@ -163,12 +165,18 @@ describe("useClearCompletedFlow", () => {
 
   // 39
   it("shows how many todos were deleted, and the button can be used again", async () => {
-    render(<Host counts={someCompleted} />);
+    const { rerender } = render(<Host counts={someCompleted} />);
 
     await userEvent.click(screen.getByRole("button"));
 
     expect(await screen.findByText("Deleted 3 completed todos.")).toBeInTheDocument();
-    expect(screen.getByRole("button")).toBeEnabled();
+    // The delete worked but no fresh counts have arrived, so the old "Clear all 3" must not be offered again.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+
+    // Once the refresh brings fresh counts, the button is back with the new number.
+    rerender(<Host counts={{ activeCount: 0, completedCount: 2 }} />);
+
+    expect(screen.getByRole("button", { name: "Clear all 2 completed todos" })).toBeEnabled();
   });
 
   it("uses singular wording when one todo was deleted", async () => {
@@ -309,14 +317,14 @@ describe("useClearCompletedFlow", () => {
     await screen.findByText("Deleted 3 completed todos.");
 
     expect(screen.getByRole("status")).not.toHaveFocus();
-    expect(screen.getByRole("button")).not.toHaveFocus();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   // 48
   it("keeps the last known count, disabled, while a new list loads", () => {
     const { rerender } = render(<Host counts={someCompleted} />);
 
-    rerender(<Host counts={null} />);
+    rerender(<Host counts={null} listIsSettled={false} />);
 
     const button = screen.getByRole("button", { name: "Clear all 3 completed todos" });
     expect(button).toBeDisabled();
@@ -332,8 +340,12 @@ describe("useClearCompletedFlow", () => {
   });
 
   it("sends nothing from unknown counts, or when nothing is completed", () => {
-    const unknown = renderHook(() => useClearCompletedFlow({ counts: null, listKey: "k" }));
-    const none = renderHook(() => useClearCompletedFlow({ counts: noneCompleted, listKey: "k" }));
+    const unknown = renderHook(() =>
+      useClearCompletedFlow({ counts: null, listIsSettled: true, listKey: "k" }),
+    );
+    const none = renderHook(() =>
+      useClearCompletedFlow({ counts: noneCompleted, listIsSettled: true, listKey: "k" }),
+    );
 
     act(() => {
       unknown.result.current.onClear();
