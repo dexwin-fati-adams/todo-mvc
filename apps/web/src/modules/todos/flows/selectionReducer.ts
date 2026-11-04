@@ -129,25 +129,20 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
     .exhaustive();
 }
 
-//PLACEHOLDERS (M48 step 4): readers that return fixed values, so the tests fail on missing behaviour and not on a broken import.
+//Readers: small pure helpers used by the labels, the flow and the views. They never change the state.
 export function selectedCount(state: SelectionState): number {
-  void state;
-  return 0;
+  return state.mode === "on" ? state.selected.length : 0;
 }
 
 export function isSelected(state: SelectionState, id: string): boolean {
-  void state;
-  void id;
-  return false;
+  return state.mode === "on" && state.selected.includes(id);
 }
 
 export function isAtLimit(state: SelectionState): boolean {
-  void state;
-  return false;
+  return selectedCount(state) >= SELECTION_LIMIT;
 }
 
+//True only when there is at least one id and every one of them is selected.
 export function allSelected(ids: readonly string[], state: SelectionState): boolean {
-  void ids;
-  void state;
-  return false;
+  return state.mode === "on" && ids.length > 0 && ids.every((id) => state.selected.includes(id));
 }
