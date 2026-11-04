@@ -292,3 +292,83 @@ describe("useTodoDeleteFlow unexpected failures", () => {
     expect(result.current.notice).toBe("Deleted “Buy milk”.");
   });
 });
+
+//onDeleted tells the caller that a todo is really gone, so selection mode can forget its id (M48).
+describe("useTodoDeleteFlow onDeleted", () => {
+  function setupWithCallback(todos: Todo[] = [first, second, third]) {
+    const onDeleted = vi.fn<(id: string) => void>();
+    const utils = renderHook(() =>
+      useTodoDeleteFlow({
+        todos,
+        setRowMessage: vi.fn(),
+        clearRowMessage: vi.fn(),
+        onDeleted,
+      }),
+    );
+    return { ...utils, onDeleted };
+  }
+
+  it("calls onDeleted with the todo id after a successful delete", async () => {
+    const { result, onDeleted } = setupWithCallback();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(onDeleted).toHaveBeenCalledWith(first.id);
+  });
+
+  it("calls onDeleted after a 404, because the todo is gone", async () => {
+    remove.mockResolvedValue(err({ type: "API_ERROR", status: 404, message: "raw-not-found" }));
+    const { result, onDeleted } = setupWithCallback();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(onDeleted).toHaveBeenCalledWith(first.id);
+  });
+
+  it.each<{ name: string; error: ClientError }>([
+    { name: "503", error: { type: "API_ERROR", status: 503, message: "secret-internal-detail" } },
+    { name: "400", error: { type: "API_ERROR", status: 400, message: "secret-internal-detail" } },
+    { name: "network", error: { type: "NETWORK_ERROR", message: "secret-internal-detail" } },
+    { name: "parse", error: { type: "PARSE_ERROR", message: "secret-internal-detail" } },
+  ])(
+    "does not call onDeleted for a $name failure, because the todo is still there",
+    async ({ error }) => {
+      remove.mockResolvedValue(err(error));
+      const { result, onDeleted } = setupWithCallback();
+
+      await act(async () => result.current.onDelete(first));
+
+      expect(onDeleted).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not call onDeleted while the request is still pending", async () => {
+    const { result, onDeleted } = setupWithCallback();
+    const release = holdNextRemove();
+
+    act(() => result.current.onDelete(first));
+    expect(onDeleted).not.toHaveBeenCalled();
+
+    await act(async () => release(ok(undefined)));
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onDeleted once for each todo that is deleted, with its own id", async () => {
+    const { result, onDeleted } = setupWithCallback();
+
+    await act(async () => result.current.onDelete(first));
+    await act(async () => result.current.onDelete(second));
+
+    expect(onDeleted.mock.calls).toEqual([[first.id], [second.id]]);
+  });
+
+  it("still deletes and shows the notice when no onDeleted is given", async () => {
+    const { result } = setup();
+
+    await act(async () => result.current.onDelete(first));
+
+    expect(result.current.notice).toBe("Deleted “Buy milk”.");
+  });
+});

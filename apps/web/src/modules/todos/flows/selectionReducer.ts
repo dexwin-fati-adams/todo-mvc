@@ -128,3 +128,26 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
     )
     .exhaustive();
 }
+
+//PLACEHOLDERS (M48 step 4): readers that return fixed values, so the tests fail on missing behaviour and not on a broken import.
+export function selectedCount(state: SelectionState): number {
+  void state;
+  return 0;
+}
+
+export function isSelected(state: SelectionState, id: string): boolean {
+  void state;
+  void id;
+  return false;
+}
+
+export function isAtLimit(state: SelectionState): boolean {
+  void state;
+  return false;
+}
+
+export function allSelected(ids: readonly string[], state: SelectionState): boolean {
+  void ids;
+  void state;
+  return false;
+}

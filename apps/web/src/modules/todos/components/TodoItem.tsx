@@ -1,7 +1,10 @@
 import type { RefObject } from "react";
 import { match } from "ts-pattern";
 import type { Todo } from "contracts";
+
 import { TodoEditForm, type TodoEditStatus } from "@/modules/todos/components/TodoEditForm";
+import { selectionRowLabel } from "@/modules/todos/flows/selectionLabels";
+import { SelectionCheckbox } from "./SelectionCheckBox";
 
 export type TodoEditing = {
   activeId: string | null;
@@ -24,6 +27,14 @@ export type TodoDeleting = {
   onDelete: (todo: Todo) => void;
 };
 
+//Selection mode adds a second checkbox to every row. It is only a view of the flow: the flow owns every rule.
+//isDisabled is true for an unselected row once the limit is reached. A selected row stays enabled, so it can be unselected.
+export type TodoSelection = {
+  isSelected: (id: string) => boolean;
+  isDisabled: (id: string) => boolean;
+  onToggle: (id: string) => void;
+};
+
 type TodoItemProps = {
   todo: Todo;
   onToggle: (todo: Todo) => void;
@@ -31,9 +42,18 @@ type TodoItemProps = {
   message: string | null;
   editing?: TodoEditing;
   deleting?: TodoDeleting;
+  selection?: TodoSelection;
 };
 
-export function TodoItem({ todo, onToggle, isPending, message, editing, deleting }: TodoItemProps) {
+export function TodoItem({
+  todo,
+  onToggle,
+  isPending,
+  message,
+  editing,
+  deleting,
+  selection,
+}: TodoItemProps) {
   const titleId = `todo-title-${todo.id}`;
   const editingThisRow = editing !== undefined && editing.activeId === todo.id ? editing : null;
   const isSavingThisRow = editingThisRow !== null && editingThisRow.status === "pending";
@@ -62,6 +82,14 @@ export function TodoItem({ todo, onToggle, isPending, message, editing, deleting
   return (
     <li className="border-b border-slate-200 px-4 py-3 last:border-b-0">
       <div className="flex items-center gap-3">
+        {selection !== undefined ? (
+          <SelectionCheckbox
+            label={selectionRowLabel(todo.title)}
+            checked={selection.isSelected(todo.id)}
+            disabled={selection.isDisabled(todo.id)}
+            onChange={() => selection.onToggle(todo.id)}
+          />
+        ) : null}
         <input
           type="checkbox"
           className="h-4 w-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
