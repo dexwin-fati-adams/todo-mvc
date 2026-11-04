@@ -6,10 +6,12 @@ import { ClearCompleted } from "@/modules/todos/components/ClearCompleted";
 import { Pagination } from "@/modules/todos/components/Pagination";
 import { SearchBox } from "@/modules/todos/components/SearchBox";
 import { StatusFilter } from "@/modules/todos/components/StatusFilter";
+import { SelectionControls } from "@/modules/todos/components/SelectionControls";
 import { ToggleAll } from "@/modules/todos/components/ToggleAll";
 import { buildListUrl } from "@/modules/todos/flows/buildListUrl";
 import { resolvePage } from "@/modules/todos/flows/resolvePage";
 import { useClearCompletedFlow } from "@/modules/todos/flows/useClearCompletedFlow";
+import { useSelectionFlow } from "@/modules/todos/flows/useSelectionFlow";
 import { useLastPagination } from "@/modules/todos/flows/useLastPagination";
 import { useListParams } from "@/modules/todos/flows/useListParams";
 import { useToggleAllFlow } from "@/modules/todos/flows/useToggleAllFlow";
@@ -102,6 +104,13 @@ export function TodoFlows() {
     listKey: viewKey,
   });
 
+  //Selection belongs to the status and the committed search. The page and the page size are not part of it.
+  const selection = useSelectionFlow({
+    scopeKey: JSON.stringify([status, search]),
+    visibleIds: todos.map((todo) => todo.id),
+    loading: serverState === "initial-loading",
+  });
+
   //Plain values for the recovery effect, so its dependency list is complete and honest.
   const rowCount = todos.length;
   const loadedPage = pagination?.page ?? null;
@@ -171,6 +180,7 @@ export function TodoFlows() {
     todos,
     setRowMessage,
     clearRowMessage,
+    onDeleted: selection.onRowDeleted,
   });
 
   const editing = useTodoEditFlow({ todos });
@@ -214,7 +224,8 @@ export function TodoFlows() {
         onSelect={selectStatus}
         hrefFor={hrefFor}
       />
-      <ToggleAll {...toggleAll} />
+      <SelectionControls {...selection} />
+      {!selection.active && <ToggleAll {...toggleAll} />}
       <TodoView
         state={serverState}
         todos={todos}
@@ -225,9 +236,10 @@ export function TodoFlows() {
         rowMessages={rowMessages}
         editing={editing}
         deleting={deleting}
+        selection={selection.active ? selection : undefined}
         emptyMessage={emptyMessageFor(status, search)}
       />
-      <ClearCompleted {...clearCompleted} />
+      {!selection.active && <ClearCompleted {...clearCompleted} />}
       {visibleNotice !== null && (
         <p
           ref={noticeRef}
