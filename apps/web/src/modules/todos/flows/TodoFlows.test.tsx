@@ -1448,3 +1448,213 @@ describe("TodoFlows clear completed", () => {
     expect(remove).not.toHaveBeenCalled();
   });
 });
+
+describe("TodoFlows selection mode", () => {
+  const counts = { active: 1, completed: 3 };
+  const entry = () => screen.getByRole("button", { name: "Select todos" });
+  const toolbar = () => screen.getByRole("group", { name: "Selection mode" });
+  const countLine = () => within(toolbar()).getByRole("status");
+  const selectBox = (title: string) => screen.getByRole("checkbox", { name: `Select “${title}”` });
+  const anySelectBox = () => screen.queryAllByRole("checkbox", { name: /^Select “/ });
+
+  async function enterSelectionMode() {
+    await userEvent.click(entry());
+  }
+
+  // 68
+  it("is off by default: Select todos is above the list and no row has a selection checkbox", () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+
+    expect(entry().compareDocumentPosition(screen.getByRole("list"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(anySelectBox()).toHaveLength(0);
+    expect(screen.getByRole("checkbox", { name: /mark all/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear all 3 completed/i })).toBeInTheDocument();
+  });
+
+  // 69
+  it("hides the toggle-all and clear-completed controls while selection mode is on", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+
+    await enterSelectionMode();
+
+    expect(toolbar()).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Select todos" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /mark all/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /clear all 3 completed/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  // 70
+  it("keeps completion and selection separate: a selection checkbox does not toggle completion", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+
+    await userEvent.click(selectBox("Buy milk"));
+
+    expect(selectBox("Buy milk")).toBeChecked();
+    expect(toggle).not.toHaveBeenCalled();
+  });
+
+  // 71
+  it("does not change the selection when a completion checkbox is clicked", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+    await userEvent.click(selectBox("Buy milk"));
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Walk the dog" }));
+
+    expect(toggle).toHaveBeenCalledWith(doneTodo.id, { completed: false });
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+  });
+
+  // 72
+  it("selects every row on screen with Select all on this page", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+
+    await userEvent.click(screen.getByRole("button", { name: "Select all 2 todos on this page" }));
+
+    expect(countLine()).toHaveTextContent(/^2 of 100 selected/);
+    expect(selectBox("Buy milk")).toBeChecked();
+    expect(selectBox("Walk the dog")).toBeChecked();
+  });
+
+  // 73
+  it("keeps the selection across pages for the same status and search", async () => {
+    givenHookByPage((page, pageSize) =>
+      hookResult({
+        todos: page === 1 ? [todo] : [doneTodo],
+        counts,
+        pagination: pageInfo(page, 3, { pageSize }),
+      }),
+    );
+    render(<TodoFlows />);
+    await enterSelectionMode();
+    await userEvent.click(selectBox("Buy milk"));
+
+    await userEvent.click(nextButton());
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+    await userEvent.click(selectBox("Walk the dog"));
+    expect(countLine()).toHaveTextContent(/^2 of 100 selected/);
+
+    await userEvent.click(previousButton());
+    expect(selectBox("Buy milk")).toBeChecked();
+  });
+
+  // 74
+  it("clears the selection when the status changes, and stays in selection mode", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+    await userEvent.click(selectBox("Buy milk"));
+
+    await userEvent.click(screen.getByRole("link", { name: /^Active/ }));
+
+    expect(toolbar()).toBeInTheDocument();
+    expect(countLine()).toHaveTextContent(/^0 of 100 selected/);
+    expect(countLine()).toHaveTextContent(/cleared/i);
+  });
+
+  // 75
+  it("clears the selection when a search is committed and again when it is cleared", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+    await userEvent.click(selectBox("Buy milk"));
+
+    await searchFor("milk");
+    expect(countLine()).toHaveTextContent(/^0 of 100 selected/);
+
+    await userEvent.click(selectBox("Buy milk"));
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(countLine()).toHaveTextContent(/^0 of 100 selected/);
+  });
+
+  // 76
+  it("keeps the selection when the page size changes", async () => {
+    givenHook({ todos: [todo, doneTodo], counts, pagination: pageInfo(1, 3) });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+    await userEvent.click(selectBox("Buy milk"));
+
+    await userEvent.selectOptions(sizeSelect(), "10");
+
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+  });
+
+  // 77
+  it("brings the batch controls back and puts focus on Select todos when the user exits", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+
+    await userEvent.click(screen.getByRole("button", { name: "Done selecting" }));
+
+    expect(screen.queryByRole("group", { name: "Selection mode" })).not.toBeInTheDocument();
+    expect(anySelectBox()).toHaveLength(0);
+    expect(screen.getByRole("checkbox", { name: /mark all/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /clear all 3 completed/i })).toBeInTheDocument();
+    await waitFor(() => expect(entry()).toHaveFocus());
+  });
+
+  // 78
+  it("removes a deleted row from the selection", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+    await enterSelectionMode();
+    await userEvent.click(selectBox("Buy milk"));
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete “Buy milk”" }));
+
+    await waitFor(() => expect(countLine()).toHaveTextContent(/^0 of 100 selected/));
+  });
+
+  // 79
+  it("still recovers from a page past the end, and selection mode can start afterwards", async () => {
+    window.history.replaceState(null, "", "/?page=9");
+    givenHookByPage((page) =>
+      page === 9
+        ? hookResult({ serverState: "empty", pagination: pageInfo(9, 3, { totalItems: 45 }) })
+        : hookResult({
+            todos: [todo],
+            counts,
+            pagination: pageInfo(page, 3, { totalItems: 45 }),
+          }),
+    );
+    render(<TodoFlows />);
+
+    await screen.findByText("Page 9 does not exist. Showing page 3.");
+    await enterSelectionMode();
+
+    expect(toolbar()).toBeInTheDocument();
+    expect(window.location.search).toBe("?page=3");
+  });
+
+  // 80
+  it("makes no extra data call when selection mode is entered and left", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    render(<TodoFlows />);
+
+    await enterSelectionMode();
+    await userEvent.click(screen.getByRole("button", { name: "Done selecting" }));
+
+    expect(toggle).not.toHaveBeenCalled();
+    expect(useTodos).toHaveBeenLastCalledWith({
+      status: "all",
+      search: null,
+      page: 1,
+      pageSize: 20,
+    });
+  });
+});
