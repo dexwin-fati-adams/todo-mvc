@@ -1,3 +1,5 @@
+import { match } from "ts-pattern";
+
 //The most todos that can be selected at once.
 export const SELECTION_LIMIT = 100;
 
@@ -22,10 +24,107 @@ export type SelectionAction =
   | { type: "scopeChanged"; scopeKey: string }
   | { type: "removed"; id: string };
 
+type SelectionOn = Extract<SelectionState, { mode: "on" }>;
+
 export const initialSelection: SelectionState = { mode: "off" };
 
-//PLACEHOLDER (M48 step 2): returns the state it is given, so the tests fail on missing behaviour and not on a broken import.
+//A selected id is removed. An unselected id is added, unless 100 are selected: then it is left out and the notice says so.
+function toggleId(state: SelectionOn, id: string): SelectionOn {
+  if (state.selected.includes(id)) {
+    return {
+      ...state,
+      selected: state.selected.filter((selectedId) => selectedId !== id),
+      notice: null,
+    };
+  }
+  if (state.selected.length >= SELECTION_LIMIT) {
+    return { ...state, notice: { kind: "limit", skipped: 1 } };
+  }
+  return { ...state, selected: [...state.selected, id], notice: null };
+}
+
+//Adds the ids that are not selected yet, in the order given, until 100. The notice says how many did not fit.
+function selectPage(state: SelectionOn, ids: readonly string[]): SelectionOn {
+  const alreadySelected = new Set(state.selected);
+  const fresh = [...new Set(ids)].filter((id) => !alreadySelected.has(id));
+  if (fresh.length === 0) {
+    return state;
+  }
+  const room = Math.max(0, SELECTION_LIMIT - state.selected.length);
+  const added = fresh.slice(0, room);
+  const skipped = fresh.length - added.length;
+  return {
+    ...state,
+    selected: [...state.selected, ...added],
+    notice: skipped > 0 ? { kind: "limit", skipped } : null,
+  };
+}
+
+function clearAll(state: SelectionOn): SelectionOn {
+  if (state.selected.length === 0) {
+    return state;
+  }
+  return { ...state, selected: [], notice: { kind: "cleared" } };
+}
+
+//A new status or search is a new scope: the selection is emptied, and the user is told only if something was selected.
+function changeScope(state: SelectionOn, scopeKey: string): SelectionOn {
+  if (state.scopeKey === scopeKey) {
+    return state;
+  }
+  return {
+    mode: "on",
+    scopeKey,
+    selected: [],
+    notice: state.selected.length > 0 ? { kind: "scope-cleared" } : null,
+  };
+}
+
+function removeId(state: SelectionOn, id: string): SelectionOn {
+  if (!state.selected.includes(id)) {
+    return state;
+  }
+  return {
+    ...state,
+    selected: state.selected.filter((selectedId) => selectedId !== id),
+    notice: null,
+  };
+}
+
+//Every rule for selection mode lives here. It is pure, it never mutates its input,
+// and it returns the same state object when nothing changes. Both matches are exhaustive,
+// so a new state or action that is not handled is a compile error and not a runtime surprise.
 export function selectionReducer(state: SelectionState, action: SelectionAction): SelectionState {
-  void action;
-  return state;
+  return match<SelectionState, SelectionState>(state)
+    .with({ mode: "off" }, (off) =>
+      match<SelectionAction, SelectionState>(action)
+        .with({ type: "enter" }, ({ scopeKey }) => ({
+          mode: "on",
+          scopeKey,
+          selected: [],
+          notice: null,
+        }))
+        .with(
+          { type: "exit" },
+          { type: "toggle" },
+          { type: "selectVisible" },
+          { type: "clear" },
+          { type: "scopeChanged" },
+          { type: "removed" },
+          () => off,
+        )
+        .exhaustive(),
+    )
+    .with({ mode: "on" }, (current) =>
+      match<SelectionAction, SelectionState>(action)
+        .with({ type: "enter" }, () => current)
+        .with({ type: "exit" }, () => initialSelection)
+        .with({ type: "toggle" }, ({ id }) => toggleId(current, id))
+        .with({ type: "selectVisible" }, ({ ids }) => selectPage(current, ids))
+        .with({ type: "clear" }, () => clearAll(current))
+        .with({ type: "scopeChanged" }, ({ scopeKey }) => changeScope(current, scopeKey))
+        .with({ type: "removed" }, ({ id }) => removeId(current, id))
+        .exhaustive(),
+    )
+    .exhaustive();
 }
