@@ -3201,7 +3201,8 @@ test.describe("Selection mode (browser)", () => {
     expect(seen.filter((entry) => entry.method !== "GET")).toEqual([]);
     expect((await listOf(request)).completedCount).toBe(2);
 
-    await completionBox(page, "Active todo 2").check();
+    // click, not check(): the completion box only flips after the server answers, and check() would fail at once.
+    await completionBox(page, "Active todo 2").click();
 
     await expect(completionBox(page, "Active todo 2")).toBeChecked();
     await expect(selectBox(page, "Active todo 2")).not.toBeChecked();
