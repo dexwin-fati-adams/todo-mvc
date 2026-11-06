@@ -4,7 +4,7 @@ import type { Todo } from "contracts";
 
 import { TodoEditForm, type TodoEditStatus } from "@/modules/todos/components/TodoEditForm";
 import { selectionRowLabel } from "@/modules/todos/flows/selectionLabels";
-import { SelectionCheckbox } from "./SelectionCheckBox";
+import { SelectionCheckbox } from "@/modules/todos/components/SelectionCheckbox";
 
 export type TodoEditing = {
   activeId: string | null;
