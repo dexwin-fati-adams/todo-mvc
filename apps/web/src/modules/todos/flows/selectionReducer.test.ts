@@ -251,3 +251,14 @@ describe("selectionReducer", () => {
     expect(SELECTION_LIMIT).toBe(100);
   });
 });
+
+describe("selectionReducer: review fixes", () => {
+  it("removed keeps a notice that still applies", () => {
+    const state = on(["a", "b"], { notice: { kind: "limit", skipped: 3 } });
+
+    const next = asOn(selectionReducer(state, { type: "removed", id: "a" }));
+
+    expect(next.selected).toEqual(["b"]);
+    expect(next.notice).toEqual({ kind: "limit", skipped: 3 });
+  });
+});

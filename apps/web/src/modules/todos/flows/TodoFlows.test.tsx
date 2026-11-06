@@ -1658,3 +1658,52 @@ describe("TodoFlows selection mode", () => {
     });
   });
 });
+
+describe("TodoFlows selection mode: review fixes", () => {
+  const counts = { active: 1, completed: 3 };
+  const entry = () => screen.getByRole("button", { name: "Select todos" });
+  const countLine = () =>
+    within(screen.getByRole("group", { name: "Selection mode" })).getByRole("status");
+
+  it("does not offer Select todos while a toggle-all request is running, and offers it again afterwards", async () => {
+    givenHook({ todos: [todo, doneTodo], counts });
+    let release!: (outcome: Result<SetAllCompletedResponse, ClientError>) => void;
+    setAll.mockReturnValueOnce(
+      new Promise<Result<SetAllCompletedResponse, ClientError>>((resolve) => {
+        release = resolve;
+      }),
+    );
+    render(<TodoFlows />);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: /mark all/i }));
+    expect(entry()).toBeDisabled();
+
+    release(ok({ updatedCount: 4 }));
+    await waitFor(() => expect(entry()).toBeEnabled());
+  });
+
+  it("removes a todo from the selection when completing it makes it leave the Active filter", async () => {
+    window.history.replaceState(null, "", "/?status=active");
+    givenHook({ todos: [todo], counts });
+    render(<TodoFlows />);
+    await userEvent.click(entry());
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select “Buy milk”" }));
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    await waitFor(() => expect(countLine()).toHaveTextContent(/^0 of 100 selected/));
+  });
+
+  it("keeps a todo selected when completing it does not remove it from the view (All filter)", async () => {
+    givenHook({ todos: [todo], counts });
+    render(<TodoFlows />);
+    await userEvent.click(entry());
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select “Buy milk”" }));
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Buy milk" }));
+
+    await waitFor(() => expect(toggle).toHaveBeenCalledTimes(1));
+    expect(countLine()).toHaveTextContent(/^1 of 100 selected/);
+  });
+});
