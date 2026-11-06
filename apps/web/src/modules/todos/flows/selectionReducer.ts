@@ -84,11 +84,8 @@ function removeId(state: SelectionOn, id: string): SelectionOn {
   if (!state.selected.includes(id)) {
     return state;
   }
-  return {
-    ...state,
-    selected: state.selected.filter((selectedId) => selectedId !== id),
-    notice: null,
-  };
+  //The notice stays: a finished delete does not make "Limit reached" or "Selection cleared" untrue.
+  return { ...state, selected: state.selected.filter((selectedId) => selectedId !== id) };
 }
 
 //Every rule for selection mode lives here. It is pure, it never mutates its input,

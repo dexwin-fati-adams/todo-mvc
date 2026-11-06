@@ -194,7 +194,10 @@ export function TodoFlows() {
       pendingRef.current.delete(todo.id);
       setPendingIds(new Set(pendingRef.current));
       result.match(
-        () => undefined,
+        () => {
+          //Under Active or Completed the toggled todo no longer matches the filter, so it leaves the view and the selection.
+          if (status !== "all") selection.onRowDeleted(todo.id);
+        },
         (failure) => setRowMessage(todo.id, toRowMessage(failure)),
       );
     });
@@ -206,6 +209,10 @@ export function TodoFlows() {
       .with(false, () => start(todo))
       .exhaustive();
   };
+
+  //A bulk request that is still running owns its own message and focus. Selection mode would hide both, so it waits.
+  const bulkPending =
+    toggleAll.messageKind === "pending" || clearCompleted.messageKind === "pending";
 
   const hrefFor = (next: Status) =>
     buildListUrl(window.location.pathname, window.location.search, {
@@ -224,7 +231,7 @@ export function TodoFlows() {
         onSelect={selectStatus}
         hrefFor={hrefFor}
       />
-      <SelectionControls {...selection} />
+      <SelectionControls {...selection} entryDisabled={selection.entryDisabled || bulkPending} />
       {!selection.active && <ToggleAll {...toggleAll} />}
       <TodoView
         state={serverState}
