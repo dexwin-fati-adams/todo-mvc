@@ -4,7 +4,7 @@ import type { Todo } from "contracts";
 import type { TodoServerState } from "@/modules/todos/hooks/useTodos";
 import type { ClientError } from "@/api/todos/todo.api";
 import { TodoList } from "@/modules/todos/components/TodoList";
-import type { TodoDeleting, TodoEditing } from "@/modules/todos/components/TodoItem";
+import type { TodoDeleting, TodoEditing, TodoSelection } from "@/modules/todos/components/TodoItem";
 
 export type TodoViewProps = {
   state: TodoServerState;
@@ -16,6 +16,7 @@ export type TodoViewProps = {
   rowMessages: Readonly<Record<string, string>>;
   editing?: TodoEditing;
   deleting?: TodoDeleting;
+  selection?: TodoSelection;
   emptyMessage?: string;
 };
 
@@ -23,7 +24,7 @@ export type TodoViewProps = {
 //  checks the type of error and returns a simple message telling the user what went wrong.
 type RowProps = Pick<
   TodoViewProps,
-  "onToggle" | "pendingIds" | "rowMessages" | "editing" | "deleting"
+  "onToggle" | "pendingIds" | "rowMessages" | "editing" | "deleting" | "selection"
 >;
 
 function errorMessage(error: ClientError | null): string {
@@ -115,9 +116,10 @@ export function TodoView({
   rowMessages,
   editing,
   deleting,
+  selection,
   emptyMessage,
 }: TodoViewProps) {
-  const rowProps = { onToggle, pendingIds, rowMessages, editing, deleting };
+  const rowProps = { onToggle, pendingIds, rowMessages, editing, deleting, selection };
   //This code gets the deletion message if one exists;
   // otherwise, it sets notice to null (nothing to show).
   //The notice displays a message to the user about the todo deletion,

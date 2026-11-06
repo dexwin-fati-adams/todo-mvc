@@ -1,5 +1,6 @@
 import { useId, useLayoutEffect, useRef } from "react";
 import { PAGE_SIZE_OPTIONS, type PageSize } from "@/modules/todos/flows/pageSize";
+import { focusRing as ring } from "@/modules/todos/components/focusRing";
 
 export type PaginationProps = {
   page: number;
@@ -8,10 +9,6 @@ export type PaginationProps = {
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: PageSize) => void;
 };
-
-//The ring shows a blue outline around a button when you use the keyboard to focus on it.
-const ring =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
 
 // Same look as the status filter links and the Delete button: slate border, small text.
 const pageButton =

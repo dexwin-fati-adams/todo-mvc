@@ -1,5 +1,10 @@
 import type { Todo } from "contracts";
-import { TodoItem, type TodoDeleting, type TodoEditing } from "@/modules/todos/components/TodoItem";
+import {
+  TodoItem,
+  type TodoDeleting,
+  type TodoEditing,
+  type TodoSelection,
+} from "@/modules/todos/components/TodoItem";
 
 type TodoListProps = {
   todos: Todo[];
@@ -8,6 +13,7 @@ type TodoListProps = {
   rowMessages: Readonly<Record<string, string>>;
   editing?: TodoEditing;
   deleting?: TodoDeleting;
+  selection?: TodoSelection;
 };
 
 export function TodoList({
@@ -17,6 +23,7 @@ export function TodoList({
   rowMessages,
   editing,
   deleting,
+  selection,
 }: TodoListProps) {
   return (
     <ul
@@ -34,6 +41,7 @@ export function TodoList({
           message={rowMessages[todo.id] ?? null}
           editing={editing}
           deleting={deleting}
+          selection={selection}
         />
       ))}
     </ul>

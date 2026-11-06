@@ -31,6 +31,9 @@ type UseTodoDeleteFlowParams = {
   todos: Todo[];
   setRowMessage: (id: string, message: string) => void;
   clearRowMessage: (id: string) => void;
+  //Optional. Called with the id once the todo is really gone: after a delete, and also after a 404 (already deleted).
+  //It is not called for a failed delete, because then the todo is still there. Selection mode uses it to forget the id.
+  onDeleted?: (id: string) => void;
 };
 
 //useTodoDeleteFlow owns the deleting ids, the list notice, and focus after a removal.
@@ -41,6 +44,7 @@ export function useTodoDeleteFlow({
   todos,
   setRowMessage,
   clearRowMessage,
+  onDeleted,
 }: UseTodoDeleteFlowParams): TodoDeleting {
   const { remove } = useDeleteTodo();
   const deletingRef = useRef(new Set<string>());
@@ -97,8 +101,14 @@ export function useTodoDeleteFlow({
     void remove(todo.id).then((result) => {
       deletingRef.current.delete(todo.id);
       match(toOutcome(result))
-        .with({ kind: "deleted" }, () => setNotice(`Deleted “${todo.title}”.`))
-        .with({ kind: "already-gone" }, () => setNotice(ALREADY_DELETED_NOTICE))
+        .with({ kind: "deleted" }, () => {
+          setNotice(`Deleted “${todo.title}”.`);
+          onDeleted?.(todo.id);
+        })
+        .with({ kind: "already-gone" }, () => {
+          setNotice(ALREADY_DELETED_NOTICE);
+          onDeleted?.(todo.id);
+        })
         .with({ kind: "failed" }, ({ message }) => {
           focusPlansRef.current.delete(todo.id);
           setRowMessage(todo.id, message);

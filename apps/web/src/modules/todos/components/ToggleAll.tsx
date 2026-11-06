@@ -1,5 +1,6 @@
 import { useId, type Ref } from "react";
 import { match } from "ts-pattern";
+import { focusRing as ring } from "@/modules/todos/components/focusRing";
 
 //pending = the request is running. success = it worked. failure = it did not work.
 export type ToggleAllMessageKind = "pending" | "success" | "failure";
@@ -15,10 +16,6 @@ export type ToggleAllProps = {
   inputRef?: Ref<HTMLInputElement>;
   onToggle: () => void;
 };
-
-//The ring shows a blue outline around the checkbox when you use the keyboard to focus on it.
-const ring =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
 
 //ToggleAll only draws the control. It holds no rules: the flow decides the label, the checked state and the messages.
 //The status and alert boxes are always on the page while the control is visible, because a screen reader only

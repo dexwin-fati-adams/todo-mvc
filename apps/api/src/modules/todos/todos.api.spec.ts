@@ -3018,6 +3018,591 @@ test.describe("Clear completed todos (browser)", () => {
   });
 });
 
+// M48 browser tests 84 to 103: selection mode, together with the list, the filters, the search and the page bar.
+// Each test runs against the real API and the real test database.
+// Selection lives only in the browser, so these tests also record every request to the API to prove that selecting sends none.
+test.describe("Selection mode (browser)", () => {
+  const WEB_URL = "http://localhost:4000";
+  const LIMIT_TEXT = "100 of 100 selected. Limit reached.";
+  const SCOPE_NOTICE = "Selection cleared because the status or search changed.";
+
+  // Makes `active` active todos and `completed` completed todos through the real API.
+  async function seedMixed(
+    request: APIRequestContext,
+    active: number,
+    completed: number,
+  ): Promise<void> {
+    for (let i = 1; i <= active; i += 1) {
+      await createTodo(request, `Active todo ${i}`);
+    }
+    for (let i = 1; i <= completed; i += 1) {
+      const title = `Done todo ${i}`;
+      const created = await createTodo(request, title);
+      await request.put(`/todos/${created.id}`, { data: { title, completed: true } });
+    }
+  }
+
+  async function seedMany(request: APIRequestContext, count: number): Promise<void> {
+    for (let i = 1; i <= count; i += 1) {
+      await createTodo(request, `Todo ${String(i).padStart(3, "0")}`);
+    }
+  }
+
+  const entryButton = (page: Page) => page.getByRole("button", { name: "Select todos" });
+  const doneButton = (page: Page) => page.getByRole("button", { name: "Done selecting" });
+  const clearSelectionButton = (page: Page) =>
+    page.getByRole("button", { name: "Clear selection" });
+  const selectPageButton = (page: Page) =>
+    page.getByRole("button", { name: /^Select (all \d+ todos|the 1 todo) on this page$/ });
+  const toolbar = (page: Page) => page.getByRole("group", { name: "Selection mode" });
+  const countLine = (page: Page) => page.getByRole("status").filter({ hasText: /of 100 selected/ });
+  const selectBox = (page: Page, title: string) =>
+    page.getByRole("checkbox", { name: `Select “${title}”`, exact: true });
+  const completionBox = (page: Page, title: string) =>
+    page.getByRole("checkbox", { name: title, exact: true });
+  const anySelectBox = (page: Page) => page.getByRole("checkbox", { name: /^Select “/ });
+  const rows = (page: Page) => page.getByRole("listitem");
+  const nextButton = (page: Page) => page.getByRole("button", { name: "Next page" });
+  const previousButton = (page: Page) => page.getByRole("button", { name: "Previous page" });
+  const sizeSelect = (page: Page) => page.getByRole("combobox", { name: "Todos per page" });
+  const searchBox = (page: Page) => page.getByRole("searchbox", { name: "Search todos" });
+  const filterLink = (page: Page, label: "All" | "Active" | "Completed") =>
+    page
+      .getByRole("navigation", { name: "Filter todos" })
+      .getByRole("link", { name: new RegExp(`^${label}`) });
+  const markAllControl = (page: Page) =>
+    page.getByRole("checkbox", { name: /^Mark (all \d+ todos|the 1 todo) as/ });
+  const clearCompletedButton = (page: Page) =>
+    page.getByRole("button", { name: /^Clear (all \d+ completed todos|the 1 completed todo)$/ });
+
+  async function listOf(request: APIRequestContext, query = ""): Promise<TodoListResponse> {
+    return (await (await request.get(`/todos?pageSize=100${query}`)).json()) as TodoListResponse;
+  }
+
+  // How many selection checkboxes are checked, and how many are enabled, on the page now.
+  async function checkedCount(page: Page): Promise<number> {
+    return anySelectBox(page).evaluateAll(
+      (elements) => elements.filter((element) => (element as HTMLInputElement).checked).length,
+    );
+  }
+  async function enabledCount(page: Page): Promise<number> {
+    return anySelectBox(page).evaluateAll(
+      (elements) =>
+        elements.filter((element) => element.getAttribute("aria-disabled") !== "true").length,
+    );
+  }
+
+  // Records every request the browser sends to the API (port 4001) from now on.
+  function recordApiRequests(page: Page): { method: string; url: string }[] {
+    const seen: { method: string; url: string }[] = [];
+    page.on("request", (req) => {
+      if (new URL(req.url()).port === "4001") {
+        seen.push({ method: req.method(), url: req.url() });
+      }
+    });
+    return seen;
+  }
+
+  // Presses Tab until the element has focus, the way a keyboard user would.
+  async function tabTo(page: Page, target: ReturnType<Page["getByRole"]>): Promise<void> {
+    for (let i = 0; i < 150; i += 1) {
+      await page.keyboard.press("Tab");
+      if (await target.evaluate((element) => element === document.activeElement)) {
+        return;
+      }
+    }
+  }
+
+  // 84
+  test("is off by default: Select todos is visible, there are no selection checkboxes, and toggle-all shows", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+
+    await expect(rows(page)).toHaveCount(5);
+    await expect(entryButton(page)).toBeVisible();
+    await expect(entryButton(page)).toBeEnabled();
+    await expect(anySelectBox(page)).toHaveCount(0);
+    await expect(toolbar(page)).toHaveCount(0);
+    await expect(markAllControl(page)).toBeVisible();
+    await expect(clearCompletedButton(page)).toBeVisible();
+  });
+
+  test("shows no Select todos button when there are no todos", async ({ page }) => {
+    await page.goto(WEB_URL);
+
+    await expect(page.getByText("No todos yet.")).toBeVisible();
+    await expect(entryButton(page)).toHaveCount(0);
+  });
+
+  // 85
+  test("after entering, the toolbar shows 0 of 100, each row has a selection checkbox, and the batch controls are gone", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    await entryButton(page).click();
+
+    await expect(toolbar(page)).toBeVisible();
+    await expect(countLine(page)).toHaveText("0 of 100 selected");
+    await expect(entryButton(page)).toHaveCount(0);
+    await expect(anySelectBox(page)).toHaveCount(5);
+    for (const title of ["Active todo 1", "Active todo 2", "Active todo 3", "Done todo 1"]) {
+      await expect(selectBox(page, title)).toBeVisible();
+      await expect(completionBox(page, title)).toBeVisible();
+    }
+    await expect(markAllControl(page)).toHaveCount(0);
+    await expect(clearCompletedButton(page)).toHaveCount(0);
+    await expect(searchBox(page)).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Filter todos" })).toBeVisible();
+  });
+
+  // 86
+  test("entering, selecting, selecting a page, clearing and leaving send no request to the API", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    const seen = recordApiRequests(page);
+
+    await entryButton(page).click();
+    await selectBox(page, "Active todo 1").check();
+    await selectPageButton(page).click();
+    await expect(countLine(page)).toHaveText("5 of 100 selected");
+    await selectBox(page, "Active todo 1").uncheck();
+    await clearSelectionButton(page).click();
+    await doneButton(page).click();
+    await expect(entryButton(page)).toBeVisible();
+
+    expect(seen).toEqual([]);
+  });
+
+  // 87
+  test("completion and selection are separate: selecting does not complete, and completing does not select", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    const seen = recordApiRequests(page);
+    await entryButton(page).click();
+
+    await selectBox(page, "Active todo 1").check();
+
+    await expect(countLine(page)).toHaveText("1 of 100 selected");
+    await expect(completionBox(page, "Active todo 1")).not.toBeChecked();
+    expect(seen.filter((entry) => entry.method !== "GET")).toEqual([]);
+    expect((await listOf(request)).completedCount).toBe(2);
+
+    // click, not check(): the completion box only flips after the server answers, and check() would fail at once.
+    await completionBox(page, "Active todo 2").click();
+
+    await expect(completionBox(page, "Active todo 2")).toBeChecked();
+    await expect(selectBox(page, "Active todo 2")).not.toBeChecked();
+    await expect(countLine(page)).toHaveText("1 of 100 selected");
+    await expect(selectBox(page, "Active todo 1")).toBeChecked();
+    const patches = seen.filter(
+      (entry) => entry.method === "PATCH" && new URL(entry.url).pathname.startsWith("/todos/"),
+    );
+    expect(patches).toHaveLength(1);
+    expect((await listOf(request)).completedCount).toBe(3);
+  });
+
+  // 88
+  test("Select all on this page selects the 20 rows on screen", async ({ page, request }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+    await entryButton(page).click();
+
+    await expect(selectPageButton(page)).toHaveText("Select all 20 todos on this page");
+    await selectPageButton(page).click();
+
+    await expect(countLine(page)).toHaveText("20 of 100 selected");
+    expect(await checkedCount(page)).toBe(20);
+    await expect(selectPageButton(page)).toBeDisabled();
+  });
+
+  // 89
+  test("keeps the selection across pages: select page 1, select two on page 2, and return", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+    await expect(countLine(page)).toHaveText("20 of 100 selected");
+
+    await nextButton(page).click();
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(rows(page)).toHaveCount(20);
+    await expect(countLine(page)).toHaveText("20 of 100 selected");
+    expect(await checkedCount(page)).toBe(0);
+    await anySelectBox(page).nth(0).check();
+    await anySelectBox(page).nth(1).check();
+    await expect(countLine(page)).toHaveText("22 of 100 selected");
+
+    await previousButton(page).click();
+
+    await expect(page).not.toHaveURL(/page=2/);
+    await expect(rows(page)).toHaveCount(20);
+    await expect(countLine(page)).toHaveText("22 of 100 selected");
+    expect(await checkedCount(page)).toBe(20);
+  });
+
+  // 90
+  test("changing the status clears the selection, keeps the mode on, and shows the notice", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+    await expect(countLine(page)).toHaveText("5 of 100 selected");
+
+    await filterLink(page, "Active").click();
+
+    await expect(page).toHaveURL(/status=active/);
+    await expect(rows(page)).toHaveCount(3);
+    await expect(countLine(page)).toHaveText(`0 of 100 selected. ${SCOPE_NOTICE}`);
+    await expect(toolbar(page)).toBeVisible();
+    expect(await checkedCount(page)).toBe(0);
+  });
+
+  // 91
+  test("committing a search and clearing it both clear the selection", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    await entryButton(page).click();
+    await selectBox(page, "Active todo 1").check();
+    await expect(countLine(page)).toHaveText("1 of 100 selected");
+
+    await searchBox(page).fill("Active");
+    await searchBox(page).press("Enter");
+
+    await expect(page).toHaveURL(/search=Active/);
+    await expect(countLine(page)).toHaveText(`0 of 100 selected. ${SCOPE_NOTICE}`);
+
+    await selectBox(page, "Active todo 1").check();
+    await expect(countLine(page)).toHaveText("1 of 100 selected");
+
+    await page.getByRole("button", { name: "Clear search" }).click();
+
+    await expect(page).not.toHaveURL(/search=/);
+    await expect(countLine(page)).toHaveText(`0 of 100 selected. ${SCOPE_NOTICE}`);
+    await expect(toolbar(page)).toBeVisible();
+  });
+
+  // 92
+  test("changing the page size keeps the selection", async ({ page, request }) => {
+    await seedMany(request, 45);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(20);
+    await entryButton(page).click();
+    await anySelectBox(page).nth(0).check();
+    await anySelectBox(page).nth(1).check();
+    await expect(countLine(page)).toHaveText("2 of 100 selected");
+
+    await sizeSelect(page).selectOption("10");
+
+    await expect(page).toHaveURL(/pageSize=10/);
+    await expect(rows(page)).toHaveCount(10);
+    await expect(countLine(page)).toHaveText("2 of 100 selected");
+    await expect(toolbar(page)).toBeVisible();
+  });
+
+  // 93
+  test("Clear selection empties the selection, stays in the mode, and puts focus on the count line", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+    await expect(clearSelectionButton(page)).toBeEnabled();
+
+    await clearSelectionButton(page).click();
+
+    await expect(countLine(page)).toHaveText("0 of 100 selected. Selection cleared.");
+    expect(await checkedCount(page)).toBe(0);
+    await expect(toolbar(page)).toBeVisible();
+    await expect(clearSelectionButton(page)).toBeDisabled();
+    await expect(countLine(page)).toBeFocused();
+  });
+
+  // 94
+  test("the limit of 100: a full page stops more, page 2 is disabled, and unselecting one frees a place", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 120);
+    await page.goto(`${WEB_URL}/?pageSize=100`);
+    await expect(rows(page)).toHaveCount(100);
+    await entryButton(page).click();
+
+    await selectPageButton(page).click();
+
+    await expect(countLine(page)).toHaveText(LIMIT_TEXT);
+    expect(await checkedCount(page)).toBe(100);
+    expect(await enabledCount(page)).toBe(100);
+    await expect(selectPageButton(page)).toBeDisabled();
+
+    await nextButton(page).click();
+
+    await expect(page).toHaveURL(/page=2/);
+    await expect(rows(page)).toHaveCount(20);
+    await expect(countLine(page)).toHaveText(LIMIT_TEXT);
+    expect(await enabledCount(page)).toBe(0);
+    await expect(selectPageButton(page)).toBeDisabled();
+
+    await previousButton(page).click();
+    await expect(rows(page)).toHaveCount(100);
+    await anySelectBox(page).nth(0).uncheck();
+    await expect(countLine(page)).toHaveText("99 of 100 selected");
+
+    await nextButton(page).click();
+    await expect(rows(page)).toHaveCount(20);
+    expect(await enabledCount(page)).toBe(20);
+    await anySelectBox(page).nth(0).check();
+
+    await expect(countLine(page)).toHaveText(LIMIT_TEXT);
+    expect(await enabledCount(page)).toBe(1);
+  });
+
+  test("Select all near the limit adds what fits and says how many were left out", async ({
+    page,
+    request,
+  }) => {
+    await seedMany(request, 120);
+    await page.goto(`${WEB_URL}/?pageSize=100`);
+    await expect(rows(page)).toHaveCount(100);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+    for (let i = 0; i < 5; i += 1) {
+      await anySelectBox(page).nth(i).uncheck();
+    }
+    await expect(countLine(page)).toHaveText("95 of 100 selected");
+    await nextButton(page).click();
+    await expect(rows(page)).toHaveCount(20);
+
+    await selectPageButton(page).click();
+
+    await expect(countLine(page)).toHaveText(
+      `${LIMIT_TEXT} You can select up to 100 todos. 15 todos were not selected.`,
+    );
+    expect(await checkedCount(page)).toBe(5);
+  });
+
+  // 95
+  test("Done selecting removes the checkboxes, brings the batch controls back, and re-entering starts at 0", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+
+    await doneButton(page).click();
+
+    await expect(toolbar(page)).toHaveCount(0);
+    await expect(anySelectBox(page)).toHaveCount(0);
+    await expect(markAllControl(page)).toBeVisible();
+    await expect(clearCompletedButton(page)).toBeVisible();
+    await expect(entryButton(page)).toBeFocused();
+
+    await entryButton(page).click();
+
+    await expect(countLine(page)).toHaveText("0 of 100 selected");
+    expect(await checkedCount(page)).toBe(0);
+  });
+
+  // 96
+  test("reloading the page leaves selection mode with nothing selected", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+    await expect(countLine(page)).toHaveText("5 of 100 selected");
+
+    await page.reload();
+
+    await expect(rows(page)).toHaveCount(5);
+    await expect(toolbar(page)).toHaveCount(0);
+    await expect(anySelectBox(page)).toHaveCount(0);
+    await expect(entryButton(page)).toBeVisible();
+  });
+
+  // 97
+  test("keyboard: Enter on Select todos moves focus to the count line, Space selects a row and keeps focus, and Done selecting returns focus", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    await tabTo(page, entryButton(page));
+    await expect(entryButton(page)).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(toolbar(page)).toBeVisible();
+    await expect(countLine(page)).toBeFocused();
+
+    const firstBox = anySelectBox(page).first();
+    await tabTo(page, firstBox);
+    await expect(firstBox).toBeFocused();
+    await page.keyboard.press("Space");
+
+    await expect(countLine(page)).toHaveText("1 of 100 selected");
+    await expect(firstBox).toBeChecked();
+    await expect(firstBox).toBeFocused();
+
+    await doneButton(page).focus();
+    await page.keyboard.press("Enter");
+
+    await expect(toolbar(page)).toHaveCount(0);
+    await expect(entryButton(page)).toBeFocused();
+  });
+
+  // 98
+  test("the entry button, the toolbar buttons and a selection checkbox show a visible focus outline", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    // A computed outline-width of 2px means the outline style is not "none", so the ring is really drawn.
+    await tabTo(page, entryButton(page));
+    await expect(entryButton(page)).toHaveCSS("outline-width", "2px");
+    await page.keyboard.press("Enter");
+    await expect(toolbar(page)).toBeVisible();
+
+    await tabTo(page, selectPageButton(page));
+    await expect(selectPageButton(page)).toHaveCSS("outline-width", "2px");
+
+    await tabTo(page, doneButton(page));
+    await expect(doneButton(page)).toHaveCSS("outline-width", "2px");
+
+    const firstBox = anySelectBox(page).first();
+    await tabTo(page, firstBox);
+    await expect(firstBox).toHaveCSS("outline-width", "2px");
+  });
+
+  // 99
+  test("names and description: the group is described by the help text, each row has two differently named checkboxes, and the count is a status", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+    await entryButton(page).click();
+
+    await expect(toolbar(page)).toHaveAccessibleDescription(
+      "Selecting a todo does not change whether it is complete.",
+    );
+    await expect(countLine(page)).toBeVisible();
+    for (const title of ["Active todo 1", "Active todo 2", "Active todo 3", "Done todo 1"]) {
+      const row = rows(page).filter({ hasText: title });
+      await expect(row.getByRole("checkbox")).toHaveCount(2);
+      await expect(
+        row.getByRole("checkbox", { name: `Select “${title}”`, exact: true }),
+      ).toHaveCount(1);
+      await expect(row.getByRole("checkbox", { name: title, exact: true })).toHaveCount(1);
+    }
+  });
+
+  // 100
+  test("deleting a selected row lowers the count by one", async ({ page, request }) => {
+    await seedMixed(request, 3, 0);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(3);
+    await entryButton(page).click();
+    await selectPageButton(page).click();
+    await expect(countLine(page)).toHaveText("3 of 100 selected");
+
+    await page.getByRole("button", { name: "Delete “Active todo 1”" }).click();
+
+    await expect(rows(page)).toHaveCount(2);
+    await expect(countLine(page)).toHaveText("2 of 100 selected");
+    await expect(toolbar(page)).toBeVisible();
+    expect((await listOf(request)).totalItems).toBe(2);
+  });
+
+  // 101
+  test("with no matching rows the toolbar stays, Select all is disabled, and Done selecting works", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 0);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(3);
+    await entryButton(page).click();
+    await selectBox(page, "Active todo 1").check();
+
+    await searchBox(page).fill("zzz-no-match");
+    await searchBox(page).press("Enter");
+
+    await expect(rows(page)).toHaveCount(0);
+    await expect(toolbar(page)).toBeVisible();
+    await expect(countLine(page)).toHaveText(`0 of 100 selected. ${SCOPE_NOTICE}`);
+    await expect(selectPageButton(page)).toBeDisabled();
+    await expect(clearSelectionButton(page)).toBeDisabled();
+
+    await doneButton(page).click();
+
+    await expect(toolbar(page)).toHaveCount(0);
+  });
+
+  // 102
+  test("the existing keyboard tests still reach their targets with the new Select todos tab stop", async ({
+    page,
+    request,
+  }) => {
+    await seedMixed(request, 3, 2);
+    await page.goto(WEB_URL);
+    await expect(rows(page)).toHaveCount(5);
+
+    // The new button sits after the filter links and before toggle-all and the list.
+    const link = filterLink(page, "Completed");
+    await link.focus();
+    await page.keyboard.press("Tab");
+
+    await expect(entryButton(page)).toBeFocused();
+
+    await page.keyboard.press("Tab");
+
+    await expect(markAllControl(page)).toBeFocused();
+  });
+});
+
 let closed = false;
 test.afterAll(async () => {
   if (closed) return;

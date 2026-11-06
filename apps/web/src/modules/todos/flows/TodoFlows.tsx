@@ -6,10 +6,12 @@ import { ClearCompleted } from "@/modules/todos/components/ClearCompleted";
 import { Pagination } from "@/modules/todos/components/Pagination";
 import { SearchBox } from "@/modules/todos/components/SearchBox";
 import { StatusFilter } from "@/modules/todos/components/StatusFilter";
+import { SelectionControls } from "@/modules/todos/components/SelectionControls";
 import { ToggleAll } from "@/modules/todos/components/ToggleAll";
 import { buildListUrl } from "@/modules/todos/flows/buildListUrl";
 import { resolvePage } from "@/modules/todos/flows/resolvePage";
 import { useClearCompletedFlow } from "@/modules/todos/flows/useClearCompletedFlow";
+import { useSelectionFlow } from "@/modules/todos/flows/useSelectionFlow";
 import { useLastPagination } from "@/modules/todos/flows/useLastPagination";
 import { useListParams } from "@/modules/todos/flows/useListParams";
 import { useToggleAllFlow } from "@/modules/todos/flows/useToggleAllFlow";
@@ -102,6 +104,21 @@ export function TodoFlows() {
     listKey: viewKey,
   });
 
+  //After Done selecting on an empty page, Select todos is not on screen, so focus goes to the search box.
+  const searchAreaRef = useRef<HTMLDivElement>(null);
+  const focusFallbackRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    focusFallbackRef.current = searchAreaRef.current?.querySelector("input") ?? null;
+  });
+
+  //Selection belongs to the status and the committed search. The page and the page size are not part of it.
+  const selection = useSelectionFlow({
+    scopeKey: JSON.stringify([status, search]),
+    visibleIds: todos.map((todo) => todo.id),
+    loading: serverState === "initial-loading",
+    focusFallbackRef,
+  });
+
   //Plain values for the recovery effect, so its dependency list is complete and honest.
   const rowCount = todos.length;
   const loadedPage = pagination?.page ?? null;
@@ -171,6 +188,7 @@ export function TodoFlows() {
     todos,
     setRowMessage,
     clearRowMessage,
+    onDeleted: selection.onRowDeleted,
   });
 
   const editing = useTodoEditFlow({ todos });
@@ -184,7 +202,10 @@ export function TodoFlows() {
       pendingRef.current.delete(todo.id);
       setPendingIds(new Set(pendingRef.current));
       result.match(
-        () => undefined,
+        () => {
+          //Under Active or Completed the toggled todo no longer matches the filter, so it leaves the view and the selection.
+          if (status !== "all") selection.onRowDeleted(todo.id);
+        },
         (failure) => setRowMessage(todo.id, toRowMessage(failure)),
       );
     });
@@ -197,6 +218,10 @@ export function TodoFlows() {
       .exhaustive();
   };
 
+  //A bulk request that is still running owns its own message and focus. Selection mode would hide both, so it waits.
+  const bulkPending =
+    toggleAll.messageKind === "pending" || clearCompleted.messageKind === "pending";
+
   const hrefFor = (next: Status) =>
     buildListUrl(window.location.pathname, window.location.search, {
       status: next,
@@ -207,14 +232,17 @@ export function TodoFlows() {
 
   return (
     <>
-      <SearchBox value={search ?? ""} onCommit={commitSearch} maxLength={SEARCH_MAX_LENGTH} />
+      <div ref={searchAreaRef}>
+        <SearchBox value={search ?? ""} onCommit={commitSearch} maxLength={SEARCH_MAX_LENGTH} />
+      </div>
       <StatusFilter
         status={status}
         counts={search === null ? counts : null}
         onSelect={selectStatus}
         hrefFor={hrefFor}
       />
-      <ToggleAll {...toggleAll} />
+      <SelectionControls {...selection} entryDisabled={selection.entryDisabled || bulkPending} />
+      {!selection.active && <ToggleAll {...toggleAll} />}
       <TodoView
         state={serverState}
         todos={todos}
@@ -225,9 +253,10 @@ export function TodoFlows() {
         rowMessages={rowMessages}
         editing={editing}
         deleting={deleting}
+        selection={selection.active ? selection : undefined}
         emptyMessage={emptyMessageFor(status, search)}
       />
-      <ClearCompleted {...clearCompleted} />
+      {!selection.active && <ClearCompleted {...clearCompleted} />}
       {visibleNotice !== null && (
         <p
           ref={noticeRef}
