@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SelectionCheckbox, SelectionCheckboxProps } from "./SelectionCheckbox";
+import {
+  SelectionCheckbox,
+  type SelectionCheckboxProps,
+} from "@/modules/todos/components/SelectionCheckBox";
 
 function setup(overrides: Partial<SelectionCheckboxProps> = {}) {
   const onChange = vi.fn();
