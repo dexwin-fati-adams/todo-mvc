@@ -6,6 +6,7 @@ import {
   GROUP_LABEL,
   SELECTION_HELP_TEXT,
 } from "@/modules/todos/flows/selectionLabels";
+import { focusRing as ring } from "@/modules/todos/components/focusRing";
 
 export type SelectionControlsProps = {
   visible: boolean;
@@ -22,10 +23,6 @@ export type SelectionControlsProps = {
   onSelectVisible: () => void;
   onClear: () => void;
 };
-
-//The ring shows a blue outline around a control when you use the keyboard to focus on it.
-const ring =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
 
 // Same look as the page buttons and the Delete button: slate border, small text.
 const button =

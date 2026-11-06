@@ -1,5 +1,6 @@
 import { useId, type Ref } from "react";
 import { match } from "ts-pattern";
+import { focusRing as ring } from "@/modules/todos/components/focusRing";
 
 //pending = the request is running. success = it worked. failure = it did not work.
 export type ClearCompletedMessageKind = "pending" | "success" | "failure";
@@ -16,10 +17,6 @@ export type ClearCompletedProps = {
   messageRef?: Ref<HTMLParagraphElement>;
   onClear: () => void;
 };
-
-//The ring shows a blue outline around a control when you use the keyboard to focus on it.
-const ring =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
 
 // Same look as the page buttons and the Delete button: slate border, small text.
 const clearButton =

@@ -1,3 +1,4 @@
+import { focusRing as ring } from "@/modules/todos/components/focusRing";
 export type SelectionCheckboxProps = {
   //The accessible name, for example: Select “Buy milk”. It is different from the completion checkbox name.
   label: string;
@@ -6,10 +7,6 @@ export type SelectionCheckboxProps = {
   disabled: boolean;
   onChange: () => void;
 };
-
-//The ring shows a blue outline around a control when you use the keyboard to focus on it.
-const ring =
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600";
 
 //aria-disabled, not the native disabled attribute, so the box stays in the Tab order and a screen reader can still reach it.
 //The other controls in a row work the same way. The click is ignored in code.

@@ -104,11 +104,19 @@ export function TodoFlows() {
     listKey: viewKey,
   });
 
+  //After Done selecting on an empty page, Select todos is not on screen, so focus goes to the search box.
+  const searchAreaRef = useRef<HTMLDivElement>(null);
+  const focusFallbackRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    focusFallbackRef.current = searchAreaRef.current?.querySelector("input") ?? null;
+  });
+
   //Selection belongs to the status and the committed search. The page and the page size are not part of it.
   const selection = useSelectionFlow({
     scopeKey: JSON.stringify([status, search]),
     visibleIds: todos.map((todo) => todo.id),
     loading: serverState === "initial-loading",
+    focusFallbackRef,
   });
 
   //Plain values for the recovery effect, so its dependency list is complete and honest.
@@ -224,7 +232,9 @@ export function TodoFlows() {
 
   return (
     <>
-      <SearchBox value={search ?? ""} onCommit={commitSearch} maxLength={SEARCH_MAX_LENGTH} />
+      <div ref={searchAreaRef}>
+        <SearchBox value={search ?? ""} onCommit={commitSearch} maxLength={SEARCH_MAX_LENGTH} />
+      </div>
       <StatusFilter
         status={status}
         counts={search === null ? counts : null}

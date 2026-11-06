@@ -3087,7 +3087,8 @@ test.describe("Selection mode (browser)", () => {
   }
   async function enabledCount(page: Page): Promise<number> {
     return anySelectBox(page).evaluateAll(
-      (elements) => elements.filter((element) => !(element as HTMLInputElement).disabled).length,
+      (elements) =>
+        elements.filter((element) => element.getAttribute("aria-disabled") !== "true").length,
     );
   }
 

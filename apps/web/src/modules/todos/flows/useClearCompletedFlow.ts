@@ -4,6 +4,7 @@ import type { ToggleAllCounts } from "@/modules/todos/flows/toggleAll";
 import { chooseClearCompleted, clearCompletedLabel } from "@/modules/todos/flows/clearCompleted";
 import type { ClearCompletedMessageKind } from "@/modules/todos/components/ClearCompleted";
 import { useClearCompleted } from "@/modules/todos/hooks/useClearCompleted";
+import { focusIsLost } from "@/modules/todos/flows/focusIsLost";
 
 export type ClearCompletedFlow = {
   visible: boolean;
@@ -112,9 +113,7 @@ export function useClearCompletedFlow({
   useEffect(() => {
     if (outcome.status === "pending" || outcome.status === "idle" || !refocusRef.current) return;
     refocusRef.current = false;
-    const active = document.activeElement;
-    const lost = active === null || active === document.body || active === buttonRef.current;
-    if (!lost) return;
+    if (!focusIsLost(buttonRef.current)) return;
     match(outcome.status)
       .with("succeeded", () => messageRef.current?.focus())
       .with("failed", () => buttonRef.current?.focus())

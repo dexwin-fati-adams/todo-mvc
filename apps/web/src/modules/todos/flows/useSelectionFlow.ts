@@ -11,6 +11,7 @@ import {
   selectionCountText,
   selectVisibleLabel as buildSelectVisibleLabel,
 } from "@/modules/todos/flows/selectionLabels";
+import { focusIsLost } from "@/modules/todos/flows/focusIsLost";
 
 export type UseSelectionFlowParams = {
   //The scope is the status and the committed search together. The page and the page size are not part of it.
@@ -48,17 +49,6 @@ export type SelectionFlow = {
 
 //After a press, focus goes to the count line (a plain element with tabIndex -1) or to the Select todos button.
 type FocusPlan = "count" | "entry";
-
-//Focus is "lost" when it is on the page body, or on a button that has just become disabled.
-//If the user has moved focus to something else, it is not lost and we leave it alone.
-function focusIsLost(): boolean {
-  const active = document.activeElement;
-  return (
-    active === null ||
-    active === document.body ||
-    (active instanceof HTMLButtonElement && active.disabled)
-  );
-}
 
 //useSelectionFlow owns the reducer, the scope tracking, the focus rule and the numbers the view needs.
 //It uses no network and no QueryClient, so no other test file needs a new mock for it.

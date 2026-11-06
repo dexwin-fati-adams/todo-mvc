@@ -8,6 +8,7 @@ import {
   type ToggleAllCounts,
 } from "@/modules/todos/flows/toggleAll";
 import { useSetAllCompleted } from "@/modules/todos/hooks/useSetAllCompleted";
+import { focusIsLost } from "@/modules/todos/flows/focusIsLost";
 
 export const TOGGLE_ALL_HELP = "This changes every todo, including other pages and filters.";
 export const TOGGLE_ALL_PENDING = "Updating all todos…";
@@ -104,8 +105,7 @@ export function useToggleAllFlow({ counts, listIsSettled, viewKey }: UseToggleAl
   useEffect(() => {
     if (state.status === "pending" || !restoreFocus.current) return;
     restoreFocus.current = false;
-    const active = document.activeElement;
-    if (active === null || active === document.body || active === inputRef.current) {
+    if (focusIsLost(inputRef.current)) {
       inputRef.current?.focus();
     }
   }, [state.status]);
