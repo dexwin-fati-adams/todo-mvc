@@ -1,11 +1,11 @@
-import { useEffect, useReducer, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
 import {
   allSelected,
   initialSelection,
   isAtLimit,
-  isSelected,
   selectedCount,
   selectionReducer,
+  type SelectionAction,
 } from "@/modules/todos/flows/selectionReducer";
 import {
   selectionCountText,
@@ -19,6 +19,9 @@ export type UseSelectionFlowParams = {
   visibleIds: readonly string[];
   //True while the first response for the current list is still loading. The entry button is then shown but disabled.
   loading: boolean;
+  //Where focus goes after Done selecting when the Select todos button is not on screen (every row was deleted).
+  //Without it, focus would fall back to the page body.
+  focusFallbackRef?: RefObject<HTMLElement | null>;
 };
 
 export type SelectionFlow = {
@@ -63,6 +66,7 @@ export function useSelectionFlow({
   scopeKey,
   visibleIds,
   loading,
+  focusFallbackRef,
 }: UseSelectionFlowParams): SelectionFlow {
   const [state, dispatch] = useReducer(selectionReducer, initialSelection);
   const entryRef = useRef<HTMLButtonElement>(null);
@@ -87,9 +91,24 @@ export function useSelectionFlow({
     if (!focusIsLost()) {
       return;
     }
-    const target = plan === "count" ? countRef.current : entryRef.current;
+    const target =
+      plan === "count" ? countRef.current : (entryRef.current ?? focusFallbackRef?.current ?? null);
     target?.focus();
   });
+
+  //A Set makes each "is this row selected?" check instant, instead of a scan of the whole list for every row.
+  const selectedIds = useMemo(() => new Set(state.mode === "on" ? state.selected : []), [state]);
+
+  //Runs an action and asks for a focus move afterwards.
+  //If the action changes nothing, React skips the render and the effect above never runs.
+  //Then the stored plan would fire later, on an unrelated render. So in that case we store nothing.
+  function press(action: SelectionAction, plan: FocusPlan) {
+    if (selectionReducer(state, action) === state) {
+      return;
+    }
+    focusPlan.current = plan;
+    dispatch(action);
+  }
 
   const active = state.mode === "on";
   const count = selectedCount(state);
@@ -107,28 +126,16 @@ export function useSelectionFlow({
     selectVisibleLabel: buildSelectVisibleLabel(visibleIds.length),
     selectVisibleDisabled: visibleIds.length === 0 || allSelected(visibleIds, state) || atLimit,
     clearDisabled: count === 0,
-    isSelected: (id) => isSelected(state, id),
+    isSelected: (id) => selectedIds.has(id),
     //At the limit, unselected rows are disabled. A selected row stays enabled so it can be unselected.
-    isDisabled: (id) => atLimit && !isSelected(state, id),
+    isDisabled: (id) => atLimit && !selectedIds.has(id),
     entryRef,
     countRef,
-    onEnter: () => {
-      focusPlan.current = "count";
-      dispatch({ type: "enter", scopeKey });
-    },
-    onExit: () => {
-      focusPlan.current = "entry";
-      dispatch({ type: "exit" });
-    },
+    onEnter: () => press({ type: "enter", scopeKey }, "count"),
+    onExit: () => press({ type: "exit" }, "entry"),
     onToggle: (id) => dispatch({ type: "toggle", id }),
-    onSelectVisible: () => {
-      focusPlan.current = "count";
-      dispatch({ type: "selectVisible", ids: visibleIds });
-    },
-    onClear: () => {
-      focusPlan.current = "count";
-      dispatch({ type: "clear" });
-    },
+    onSelectVisible: () => press({ type: "selectVisible", ids: visibleIds }, "count"),
+    onClear: () => press({ type: "clear" }, "count"),
     onRowDeleted: (id) => dispatch({ type: "removed", id }),
   };
 }

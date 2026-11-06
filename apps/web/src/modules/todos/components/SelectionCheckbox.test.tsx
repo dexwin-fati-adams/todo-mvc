@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SelectionCheckbox, SelectionCheckboxProps } from "./SelectionCheckBox";
+import { SelectionCheckbox, SelectionCheckboxProps } from "./SelectionCheckbox";
 
 function setup(overrides: Partial<SelectionCheckboxProps> = {}) {
   const onChange = vi.fn();
@@ -57,11 +57,11 @@ describe("SelectionCheckbox", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
-  it("has the real disabled attribute when told, and a click calls nothing", async () => {
+  it("is marked aria-disabled when told, and a click calls nothing", async () => {
     const { onChange } = setup({ disabled: true });
     const checkbox = screen.getByRole("checkbox");
 
-    expect(checkbox).toBeDisabled();
+    expect(checkbox).toHaveAttribute("aria-disabled", "true");
     await userEvent.click(checkbox);
 
     expect(onChange).not.toHaveBeenCalled();
