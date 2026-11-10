@@ -19,23 +19,20 @@ export function selectionRowLabel(title: string): string {
 }
 
 export function selectionNoticeText(notice: SelectionNotice): string {
-  return (
-    match(notice)
-      .with({ kind: "limit" }, ({ skipped }) =>
-        skipped === 1
-          ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
-          : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
-      )
-      .with(
-        { kind: "scope-cleared" },
-        () => "Selection cleared because the status or search changed.",
-      )
-      .with({ kind: "cleared" }, () => "Selection cleared.")
-      // PLACEHOLDERS (red phase): replaced by the real sentences.
-      .with({ kind: "updated" }, () => "")
-      .with({ kind: "conflict" }, () => "")
-      .exhaustive()
-  );
+  return match(notice)
+    .with({ kind: "limit" }, ({ skipped }) =>
+      skipped === 1
+        ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
+        : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
+    )
+    .with(
+      { kind: "scope-cleared" },
+      () => "Selection cleared because the status or search changed.",
+    )
+    .with({ kind: "cleared" }, () => "Selection cleared.")
+    .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
+    .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
+    .exhaustive();
 }
 
 // The count comes first. At the limit it says so. A notice, if there is one, comes last.
@@ -53,21 +50,32 @@ export function selectionCountText(count: number, notice: SelectionNotice | null
   return base.endsWith(".") ? `${base} ${sentence}` : `${base}. ${sentence}`;
 }
 
-// ---- Update selected todos: PLACEHOLDERS (red phase), replaced by the real sentences ----
-export const UPDATE_FAILURE_TEXT = "";
-export const UPDATE_HELP_TEXT = "";
+// ---- Update selected todos ----
+export const UPDATE_FAILURE_TEXT = "Could not update the selected todos. Please try again.";
+export const UPDATE_HELP_TEXT = "Changes only the selected todos, on every page.";
+
+function todoWord(count: number): string {
+  return count === 1 ? "todo" : "todos";
+}
 
 export function markCompleteLabel(count: number): string {
-  void count;
-  return "";
+  return `Mark ${count} selected ${todoWord(count)} as complete`;
 }
 
 export function markActiveLabel(count: number): string {
-  void count;
-  return "";
+  return `Mark ${count} selected ${todoWord(count)} as active`;
 }
 
 export function updatingText(count: number): string {
-  void count;
-  return "";
+  return `Updating ${count} selected ${todoWord(count)}…`;
+}
+
+function updatedSentence(count: number, completed: boolean): string {
+  return `Marked ${count} selected ${todoWord(count)} as ${completed ? "complete" : "active"}.`;
+}
+
+function conflictSentence(removed: number): string {
+  return removed === 1
+    ? "Nothing was changed. 1 selected todo no longer exists and was removed from the selection."
+    : `Nothing was changed. ${removed} selected todos no longer exist and were removed from the selection.`;
 }
