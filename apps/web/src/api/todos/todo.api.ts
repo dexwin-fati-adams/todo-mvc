@@ -2,12 +2,15 @@ import { match, P } from "ts-pattern";
 import { err, errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow";
 import type { z } from "zod";
 import {
+  BatchConflictResponseSchema,
   DeleteCompletedResponseSchema,
   ErrorResponseSchema,
   ReplaceTodoRequestSchema,
   SetAllCompletedResponseSchema,
   TodoListResponseSchema,
   TodoSchema,
+  UpdateBatchRequestSchema,
+  UpdateBatchResponseSchema,
   UpdateTodoRequestSchema,
   type CreateTodoRequest,
   type ReplaceTodoRequest,
@@ -163,9 +166,57 @@ export const todoApi = {
   clearCompleted: () =>
     request("/todos?status=completed", DeleteCompletedResponseSchema, { method: "DELETE" }),
 
-  // PLACEHOLDER (red phase): replaced by the real request.
+  // updateBatch sets completed on exactly the listed todos, all or nothing.
+  // The body is checked with the shared contract first, so an invalid request sends nothing.
+  // A 409 with a valid batch_conflict body becomes BATCH_CONFLICT with the missing ids.
+  // Any other failure, including a 409 whose body does not match, stays a ClientError.
   updateBatch: (body: UpdateBatchRequest): ResultAsync<UpdateBatchResponse, UpdateBatchError> => {
-    void body;
-    return okAsync<UpdateBatchResponse, UpdateBatchError>({ updatedCount: 0 });
+    const parsedBody = UpdateBatchRequestSchema.safeParse(body);
+    if (!parsedBody.success) {
+      return errAsync<UpdateBatchResponse, UpdateBatchError>({
+        type: "PARSE_ERROR",
+        message: parsedBody.error.message,
+      });
+    }
+
+    return ResultAsync.fromPromise(
+      fetch(`${config.apiUrl}/todos/batch`, {
+        method: "PATCH",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(parsedBody.data),
+      }),
+      (e): UpdateBatchError => ({
+        type: "NETWORK_ERROR",
+        message: e instanceof Error ? e.message : "Network error",
+      }),
+    ).andThen((res): ResultAsync<UpdateBatchResponse, UpdateBatchError> => {
+      if (res.status === 409) {
+        return ResultAsync.fromSafePromise(res.json().catch((): unknown => null)).andThen(
+          (json): ResultAsync<UpdateBatchResponse, UpdateBatchError> => {
+            const conflict = BatchConflictResponseSchema.safeParse(json);
+            return errAsync<UpdateBatchResponse, UpdateBatchError>(
+              conflict.success
+                ? { type: "BATCH_CONFLICT", missingIds: conflict.data.missingIds }
+                : { type: "API_ERROR", status: 409, message: res.statusText },
+            );
+          },
+        );
+      }
+      if (!res.ok) {
+        return toApiError(res);
+      }
+      return ResultAsync.fromPromise(res.json(), (): UpdateBatchError => ({
+        type: "PARSE_ERROR",
+        message: "Failed to parse response body",
+      })).andThen((json: unknown): Result<UpdateBatchResponse, UpdateBatchError> => {
+        const parsed = UpdateBatchResponseSchema.safeParse(json);
+        return parsed.success
+          ? ok<UpdateBatchResponse, UpdateBatchError>(parsed.data)
+          : err<UpdateBatchResponse, UpdateBatchError>({
+              type: "PARSE_ERROR",
+              message: parsed.error.message,
+            });
+      });
+    });
   },
 };
