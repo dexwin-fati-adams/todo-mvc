@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import {
   type BatchConflictResponse,
-  BatchConflictResponseSchema,
   CreateTodoRequestSchema,
   DeleteCompletedQuerySchema,
   DeleteCompletedResponseSchema,
