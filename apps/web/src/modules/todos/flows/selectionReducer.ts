@@ -4,7 +4,11 @@ import { match } from "ts-pattern";
 export const SELECTION_LIMIT = 100;
 
 export type SelectionNotice =
-  { kind: "limit"; skipped: number } | { kind: "scope-cleared" } | { kind: "cleared" };
+  | { kind: "limit"; skipped: number }
+  | { kind: "scope-cleared" }
+  | { kind: "cleared" }
+  | { kind: "updated"; count: number; completed: boolean }
+  | { kind: "conflict"; removed: number };
 
 export type SelectionState =
   | { mode: "off" }
@@ -22,7 +26,9 @@ export type SelectionAction =
   | { type: "selectVisible"; ids: readonly string[] }
   | { type: "clear" }
   | { type: "scopeChanged"; scopeKey: string }
-  | { type: "removed"; id: string };
+  | { type: "removed"; id: string }
+  | { type: "updated"; count: number; completed: boolean }
+  | { type: "conflict"; missingIds: readonly string[] };
 
 type SelectionOn = Extract<SelectionState, { mode: "on" }>;
 
@@ -108,6 +114,8 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           { type: "clear" },
           { type: "scopeChanged" },
           { type: "removed" },
+          { type: "updated" },
+          { type: "conflict" },
           () => off,
         )
         .exhaustive(),
@@ -121,6 +129,9 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
         .with({ type: "clear" }, () => clearAll(current))
         .with({ type: "scopeChanged" }, ({ scopeKey }) => changeScope(current, scopeKey))
         .with({ type: "removed" }, ({ id }) => removeId(current, id))
+        // PLACEHOLDERS (red phase): replaced by the real update and conflict rules.
+        .with({ type: "updated" }, () => current)
+        .with({ type: "conflict" }, () => current)
         .exhaustive(),
     )
     .exhaustive();

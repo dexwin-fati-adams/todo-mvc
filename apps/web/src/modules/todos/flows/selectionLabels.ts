@@ -19,18 +19,23 @@ export function selectionRowLabel(title: string): string {
 }
 
 export function selectionNoticeText(notice: SelectionNotice): string {
-  return match(notice)
-    .with({ kind: "limit" }, ({ skipped }) =>
-      skipped === 1
-        ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
-        : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
-    )
-    .with(
-      { kind: "scope-cleared" },
-      () => "Selection cleared because the status or search changed.",
-    )
-    .with({ kind: "cleared" }, () => "Selection cleared.")
-    .exhaustive();
+  return (
+    match(notice)
+      .with({ kind: "limit" }, ({ skipped }) =>
+        skipped === 1
+          ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
+          : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
+      )
+      .with(
+        { kind: "scope-cleared" },
+        () => "Selection cleared because the status or search changed.",
+      )
+      .with({ kind: "cleared" }, () => "Selection cleared.")
+      // PLACEHOLDERS (red phase): replaced by the real sentences.
+      .with({ kind: "updated" }, () => "")
+      .with({ kind: "conflict" }, () => "")
+      .exhaustive()
+  );
 }
 
 // The count comes first. At the limit it says so. A notice, if there is one, comes last.
@@ -46,4 +51,23 @@ export function selectionCountText(count: number, notice: SelectionNotice | null
 
   const sentence = selectionNoticeText(notice);
   return base.endsWith(".") ? `${base} ${sentence}` : `${base}. ${sentence}`;
+}
+
+// ---- Update selected todos: PLACEHOLDERS (red phase), replaced by the real sentences ----
+export const UPDATE_FAILURE_TEXT = "";
+export const UPDATE_HELP_TEXT = "";
+
+export function markCompleteLabel(count: number): string {
+  void count;
+  return "";
+}
+
+export function markActiveLabel(count: number): string {
+  void count;
+  return "";
+}
+
+export function updatingText(count: number): string {
+  void count;
+  return "";
 }
