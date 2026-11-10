@@ -162,4 +162,10 @@ export const todoApi = {
   // is no body, so no search or page can go with it. The server answers with { deletedCount }.
   clearCompleted: () =>
     request("/todos?status=completed", DeleteCompletedResponseSchema, { method: "DELETE" }),
+
+  // PLACEHOLDER (red phase): replaced by the real request.
+  updateBatch: (body: UpdateBatchRequest): ResultAsync<UpdateBatchResponse, UpdateBatchError> => {
+    void body;
+    return okAsync<UpdateBatchResponse, UpdateBatchError>({ updatedCount: 0 });
+  },
 };
