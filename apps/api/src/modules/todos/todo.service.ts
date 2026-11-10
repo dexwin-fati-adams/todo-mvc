@@ -206,7 +206,7 @@ export function createTodoService(repo: TodoRepository): TodoService {
     },
 
     // PLACEHOLDER (red phase): replaced by the repository call.
-    updateBatch(_ids: string[], _completed: boolean): ResultAsync<BatchResult, TodoError> {
+    updateBatch(): ResultAsync<BatchResult, TodoError> {
       return okAsync({ kind: "ok", updatedCount: 0 });
     },
   };

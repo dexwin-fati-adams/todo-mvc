@@ -185,7 +185,7 @@ export function createTodoRepository(db: Db): TodoRepository {
         ).map((rows) => rows.length);
       },
       // PLACEHOLDER (red phase): replaced by the transactional update.
-      updateBatch(_ids: string[], _completed: boolean): ResultAsync<BatchResult, TodoDbError> {
+      updateBatch(): ResultAsync<BatchResult, TodoDbError> {
         return ResultAsync.fromSafePromise(
           Promise.resolve<BatchResult>({ kind: "ok", updatedCount: 0 }),
         );

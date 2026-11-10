@@ -647,3 +647,76 @@ describe("deleteCompleted", () => {
     expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
   });
 });
+
+// ─── updateBatch ──────────────────────────────────────────────────────────────
+
+// A fake db whose transaction() runs the callback with a fake trx, like drizzle does:
+// if the callback throws (rollback), transaction() rejects with that error.
+function makeBatchDb(options: { returned?: Array<{ id: string }>; failure?: Error }) {
+  const returning = options.failure
+    ? vi.fn().mockRejectedValue(options.failure)
+    : vi.fn().mockResolvedValue(options.returned ?? []);
+  const where = vi.fn().mockReturnValue({ returning });
+  const set = vi.fn().mockReturnValue({ where });
+  const update = vi.fn().mockReturnValue({ set });
+  const rollback = vi.fn(() => {
+    throw new Error("rollback");
+  });
+  const trx = { update, rollback };
+  const transaction = vi.fn(async (callback: (t: typeof trx) => Promise<unknown>) => callback(trx));
+  return { db: { transaction } as unknown as Db, set, rollback, transaction };
+}
+
+describe("updateBatch", () => {
+  const a = "00000000-0000-0000-0000-00000000000a";
+  const b = "00000000-0000-0000-0000-00000000000b";
+  const c = "00000000-0000-0000-0000-00000000000c";
+
+  it("runs inside one transaction and sets the requested value", async () => {
+    const { db, set, transaction } = makeBatchDb({ returned: [{ id: a }, { id: b }] });
+
+    await createTodoRepository(db).updateBatch([a, b], true);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith({ completed: true });
+  });
+
+  it("returns ok with the number of rows found when every id exists", async () => {
+    const { db, rollback } = makeBatchDb({ returned: [{ id: a }, { id: b }, { id: c }] });
+
+    const result = await createTodoRepository(db).updateBatch([a, b, c], false);
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "ok", updatedCount: 3 });
+    expect(rollback).not.toHaveBeenCalled();
+  });
+
+  it("rolls back and returns conflict with the missing ids in request order", async () => {
+    const { db, rollback } = makeBatchDb({ returned: [{ id: b }] });
+
+    const result = await createTodoRepository(db).updateBatch([a, b, c], true);
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "conflict", missingIds: [a, c] });
+  });
+
+  it("returns conflict with every id when none exist", async () => {
+    const { db, rollback } = makeBatchDb({ returned: [] });
+
+    const result = await createTodoRepository(db).updateBatch([a, b], true);
+
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "conflict", missingIds: [a, b] });
+  });
+
+  it("returns TODO_DB_ERROR as a value when the query fails, never throws", async () => {
+    const { db, rollback } = makeBatchDb({ failure: new Error("connection lost") });
+
+    const result = await createTodoRepository(db).updateBatch([a], true);
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
+    expect(rollback).not.toHaveBeenCalled();
+  });
+});
