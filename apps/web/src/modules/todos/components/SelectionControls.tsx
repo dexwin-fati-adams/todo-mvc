@@ -8,6 +8,17 @@ import {
 } from "@/modules/todos/flows/selectionLabels";
 import { focusRing as ring } from "@/modules/todos/components/focusRing";
 
+export type SelectionUpdateControls = {
+  completeLabel: string;
+  activeLabel: string;
+  disabled: boolean;
+  pending: boolean;
+  failureText: string | null;
+  helpText: string;
+  onComplete: () => void;
+  onActive: () => void;
+};
+
 export type SelectionControlsProps = {
   visible: boolean;
   active: boolean;
@@ -22,6 +33,8 @@ export type SelectionControlsProps = {
   onExit: () => void;
   onSelectVisible: () => void;
   onClear: () => void;
+  //The two update buttons, the pending state and the failure alert. Absent means none are drawn.
+  update?: SelectionUpdateControls;
 };
 
 // Same look as the page buttons and the Delete button: slate border, small text.
