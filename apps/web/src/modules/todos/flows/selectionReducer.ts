@@ -94,6 +94,23 @@ function removeId(state: SelectionOn, id: string): SelectionOn {
   return { ...state, selected: state.selected.filter((selectedId) => selectedId !== id) };
 }
 
+//A finished update empties the selection and keeps the mode on. The notice carries the server's count and the direction.
+function applyUpdated(state: SelectionOn, count: number, completed: boolean): SelectionOn {
+  return { ...state, selected: [], notice: { kind: "updated", count, completed } };
+}
+
+//A conflict removes only the ids that are both selected and named as missing. The rest keep their order.
+//If none of the named ids is selected, nothing changes and the same state comes back.
+function applyConflict(state: SelectionOn, missingIds: readonly string[]): SelectionOn {
+  const missing = new Set(missingIds);
+  const remaining = state.selected.filter((id) => !missing.has(id));
+  const removed = state.selected.length - remaining.length;
+  if (removed === 0) {
+    return state;
+  }
+  return { ...state, selected: remaining, notice: { kind: "conflict", removed } };
+}
+
 //Every rule for selection mode lives here. It is pure, it never mutates its input,
 // and it returns the same state object when nothing changes. Both matches are exhaustive,
 // so a new state or action that is not handled is a compile error and not a runtime surprise.
@@ -129,9 +146,10 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
         .with({ type: "clear" }, () => clearAll(current))
         .with({ type: "scopeChanged" }, ({ scopeKey }) => changeScope(current, scopeKey))
         .with({ type: "removed" }, ({ id }) => removeId(current, id))
-        // PLACEHOLDERS (red phase): replaced by the real update and conflict rules.
-        .with({ type: "updated" }, () => current)
-        .with({ type: "conflict" }, () => current)
+        .with({ type: "updated" }, ({ count, completed }) =>
+          applyUpdated(current, count, completed),
+        )
+        .with({ type: "conflict" }, ({ missingIds }) => applyConflict(current, missingIds))
         .exhaustive(),
     )
     .exhaustive();
