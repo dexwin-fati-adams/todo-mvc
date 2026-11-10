@@ -56,6 +56,7 @@ export function SelectionControls({
   onExit,
   onSelectVisible,
   onClear,
+  update,
 }: SelectionControlsProps) {
   const helpId = useId();
 
@@ -82,6 +83,7 @@ export function SelectionControls({
       role="group"
       aria-label={GROUP_LABEL}
       aria-describedby={helpId}
+      aria-busy={update?.pending ? true : undefined}
       className="flex flex-col gap-2 px-4 py-2"
     >
       <p
@@ -95,6 +97,7 @@ export function SelectionControls({
       <p id={helpId} className="text-xs text-slate-500">
         {SELECTION_HELP_TEXT}
       </p>
+      {update !== undefined && <p className="text-xs text-slate-500">{update.helpText}</p>}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -112,10 +115,35 @@ export function SelectionControls({
         >
           {CLEAR_LABEL}
         </button>
+        {update !== undefined && (
+          <>
+            <button
+              type="button"
+              disabled={update.disabled}
+              className={`${button} ${ring}`}
+              onClick={() => update.onComplete()}
+            >
+              {update.completeLabel}
+            </button>
+            <button
+              type="button"
+              disabled={update.disabled}
+              className={`${button} ${ring}`}
+              onClick={() => update.onActive()}
+            >
+              {update.activeLabel}
+            </button>
+          </>
+        )}
         <button type="button" className={`${button} ${ring}`} onClick={() => onExit()}>
           {EXIT_LABEL}
         </button>
       </div>
+      {update?.failureText != null && (
+        <p role="alert" className="text-sm font-medium text-red-700">
+          {update.failureText}
+        </p>
+      )}
     </div>
   );
 }
