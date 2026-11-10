@@ -144,3 +144,21 @@ export function getStatusFromPath(path: TodoPath): Status {
     .with("/completed", () => TODO_STATUSES.completed)
     .exhaustive();
 }
+
+//Batch means doing multiple operations together in one request instead of doing them one by one.
+export const BATCH_MAX_IDS = 100;
+
+//.passthrough() means Zod allows additional properties instead of stripping them out.
+export const UpdateBatchRequestSchema = z.object({}).passthrough();
+export type UpdateBatchRequest = { ids: string[]; completed: boolean };
+
+export const UpdateBatchResponseSchema = z.object({}).passthrough();
+export type UpdateBatchResponse = { updatedCount: number };
+
+//This describes a response when the batch operation encounters a conflict because some requested todos don't exist.
+export const BatchConflictResponseSchema = z.object({}).passthrough();
+export type BatchConflictResponse = {
+  error: string;
+  message: string;
+  missingIds: string[];
+};
