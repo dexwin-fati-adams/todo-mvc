@@ -1,4 +1,4 @@
-import { err, ok, errAsync, okAsync } from "neverthrow";
+import { err, ok, errAsync } from "neverthrow";
 import type { Result, ResultAsync } from "neverthrow";
 import { match } from "ts-pattern";
 import { v4 as uuid } from "uuid";
@@ -205,9 +205,9 @@ export function createTodoService(repo: TodoRepository): TodoService {
       return repo.deleteCompleted();
     },
 
-    // PLACEHOLDER (red phase): replaced by the repository call.
-    updateBatch(): ResultAsync<BatchResult, TodoError> {
-      return okAsync({ kind: "ok", updatedCount: 0 });
+    // All or nothing: the repository runs one transaction and answers ok or conflict.
+    updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoError> {
+      return repo.updateBatch(ids, completed);
     },
   };
 }

@@ -146,19 +146,32 @@ export function getStatusFromPath(path: TodoPath): Status {
 }
 
 //Batch means doing multiple operations together in one request instead of doing them one by one.
+// PATCH /todos/batch — set completed on exactly the listed todos, all or nothing.
+// ids: 1 to BATCH_MAX_IDS unique UUIDs. .strict() rejects any other field.
 export const BATCH_MAX_IDS = 100;
 
-//.passthrough() means Zod allows additional properties instead of stripping them out.
-export const UpdateBatchRequestSchema = z.object({}).passthrough();
-export type UpdateBatchRequest = { ids: string[]; completed: boolean };
+export const UpdateBatchRequestSchema = z
+  .object({
+    ids: z
+      .array(z.string().uuid())
+      .min(1, "ids must contain at least one id")
+      .max(BATCH_MAX_IDS, `ids must contain at most ${BATCH_MAX_IDS} ids`)
+      .refine((ids) => new Set(ids).size === ids.length, { message: "ids must be unique" }),
+    completed: z.boolean(),
+  })
+  .strict();
+export type UpdateBatchRequest = z.infer<typeof UpdateBatchRequestSchema>;
 
-export const UpdateBatchResponseSchema = z.object({}).passthrough();
-export type UpdateBatchResponse = { updatedCount: number };
+// 200 body: the number of todos found and set (including ones that already had the value).
+export const UpdateBatchResponseSchema = z.object({
+  updatedCount: z.number().int().min(0),
+});
+export type UpdateBatchResponse = z.infer<typeof UpdateBatchResponseSchema>;
 
-//This describes a response when the batch operation encounters a conflict because some requested todos don't exist.
-export const BatchConflictResponseSchema = z.object({}).passthrough();
-export type BatchConflictResponse = {
-  error: string;
-  message: string;
-  missingIds: string[];
-};
+// 409 body: nothing was changed, and these ids do not exist.
+export const BatchConflictResponseSchema = z.object({
+  error: z.literal("batch_conflict"),
+  message: z.string(),
+  missingIds: z.array(z.string()),
+});
+export type BatchConflictResponse = z.infer<typeof BatchConflictResponseSchema>;

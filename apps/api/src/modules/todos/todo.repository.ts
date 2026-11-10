@@ -1,4 +1,4 @@
-import { and, count, eq, ilike } from "drizzle-orm";
+import { and, count, eq, ilike, inArray } from "drizzle-orm";
 import { ResultAsync, err, ok } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Status } from "contracts";
@@ -184,11 +184,35 @@ export function createTodoRepository(db: Db): TodoRepository {
           (cause) => TodoErrors.dbError(cause),
         ).map((rows) => rows.length);
       },
-      // PLACEHOLDER (red phase): replaced by the transactional update.
-      updateBatch(): ResultAsync<BatchResult, TodoDbError> {
-        return ResultAsync.fromSafePromise(
-          Promise.resolve<BatchResult>({ kind: "ok", updatedCount: 0 }),
-        );
+      // One transaction: UPDATE ... WHERE id IN (...) RETURNING id. If any requested id
+      // was not returned, it does not exist, so the whole transaction is rolled back and
+      // the missing ids come back as a conflict value (in request order).
+      updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoDbError> {
+        const run = async (): Promise<BatchResult> => {
+          let missingIds: string[] = [];
+          try {
+            return await tx.transaction(async (trx): Promise<BatchResult> => {
+              const rows = await trx
+                .update(todosTable)
+                .set({ completed })
+                .where(inArray(todosTable.id, ids))
+                .returning({ id: todosTable.id });
+              const found = new Set(rows.map((row) => row.id));
+              const missing = ids.filter((id) => !found.has(id));
+              if (missing.length > 0) {
+                missingIds = missing;
+                return trx.rollback();
+              }
+              return { kind: "ok", updatedCount: rows.length };
+            });
+          } catch (cause) {
+            if (missingIds.length > 0) {
+              return { kind: "conflict", missingIds };
+            }
+            throw cause;
+          }
+        };
+        return ResultAsync.fromPromise(run(), (cause) => TodoErrors.dbError(cause));
       },
     };
   }
