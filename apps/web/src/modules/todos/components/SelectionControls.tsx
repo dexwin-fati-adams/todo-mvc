@@ -15,6 +15,8 @@ export type SelectionUpdateControls = {
   pending: boolean;
   failureText: string | null;
   helpText: string;
+  completeRef?: Ref<HTMLButtonElement>;
+  activeRef?: Ref<HTMLButtonElement>;
   onComplete: () => void;
   onActive: () => void;
 };
@@ -118,6 +120,7 @@ export function SelectionControls({
         {update !== undefined && (
           <>
             <button
+              ref={update.completeRef}
               type="button"
               disabled={update.disabled}
               className={`${button} ${ring}`}
@@ -126,6 +129,7 @@ export function SelectionControls({
               {update.completeLabel}
             </button>
             <button
+              ref={update.activeRef}
               type="button"
               disabled={update.disabled}
               className={`${button} ${ring}`}
