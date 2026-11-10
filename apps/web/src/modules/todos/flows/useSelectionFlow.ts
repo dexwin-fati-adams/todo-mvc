@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
+import { match } from "ts-pattern";
+import type { SelectionUpdateControls } from "@/modules/todos/components/SelectionControls";
 import {
   allSelected,
   initialSelection,
@@ -8,11 +10,16 @@ import {
   type SelectionAction,
 } from "@/modules/todos/flows/selectionReducer";
 import {
+  UPDATE_FAILURE_TEXT,
+  UPDATE_HELP_TEXT,
+  markActiveLabel,
+  markCompleteLabel,
   selectionCountText,
   selectVisibleLabel as buildSelectVisibleLabel,
+  updatingText,
 } from "@/modules/todos/flows/selectionLabels";
 import { focusIsLost } from "@/modules/todos/flows/focusIsLost";
-import type { SelectionUpdateControls } from "@/modules/todos/components/SelectionControls";
+import { useUpdateSelected } from "@/modules/todos/hooks/useUpdateSelected";
 
 export type UseSelectionFlowParams = {
   //The scope is the status and the committed search together. The page and the page size are not part of it.
@@ -48,15 +55,15 @@ export type SelectionFlow = {
   onRowDeleted: (id: string) => void;
   //True while a batch request runs: the selection is locked and every selection control is inert.
   locked: boolean;
-  //The two update buttons, the pending state and the failure alert. PLACEHOLDER (red phase): not drawn yet.
+  //The two update buttons, the pending state and the failure alert. Present only while selection mode is on.
   update?: SelectionUpdateControls;
 };
 
-//After a press, focus goes to the count line (a plain element with tabIndex -1) or to the Select todos button.
-type FocusPlan = "count" | "entry";
+//After a press, focus goes to the count line (a plain element with tabIndex -1), to the Select todos button,
+//or back to the update button that was pressed.
+type FocusPlan = "count" | "entry" | "complete" | "active";
 
-//useSelectionFlow owns the reducer, the scope tracking, the focus rule and the numbers the view needs.
-//It uses no network and no QueryClient, so no other test file needs a new mock for it.
+//useSelectionFlow owns the reducer, the scope tracking, the focus rule, the batch update and the numbers the view needs.
 export function useSelectionFlow({
   scopeKey,
   visibleIds,
@@ -66,7 +73,15 @@ export function useSelectionFlow({
   const [state, dispatch] = useReducer(selectionReducer, initialSelection);
   const entryRef = useRef<HTMLButtonElement>(null);
   const countRef = useRef<HTMLParagraphElement>(null);
+  const completeRef = useRef<HTMLButtonElement>(null);
+  const activeRef = useRef<HTMLButtonElement>(null);
   const focusPlan = useRef<FocusPlan | null>(null);
+  const { update: sendUpdate } = useUpdateSelected();
+
+  //The ref is the guard (it changes at once, even before React renders). The state only draws the pending look.
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   //Same pattern as useClearCompletedFlow: remember the last scope and, only when it changes, dispatch during render.
   //React then renders again before anything is drawn, so no frame ever shows the old selection under a new scope.
@@ -86,8 +101,12 @@ export function useSelectionFlow({
     if (!focusIsLost()) {
       return;
     }
-    const target =
-      plan === "count" ? countRef.current : (entryRef.current ?? focusFallbackRef?.current ?? null);
+    const target = match(plan)
+      .with("count", () => countRef.current)
+      .with("entry", () => entryRef.current ?? focusFallbackRef?.current ?? null)
+      .with("complete", () => completeRef.current)
+      .with("active", () => activeRef.current)
+      .exhaustive();
     target?.focus();
   });
 
@@ -97,12 +116,59 @@ export function useSelectionFlow({
   //Runs an action and asks for a focus move afterwards.
   //If the action changes nothing, React skips the render and the effect above never runs.
   //Then the stored plan would fire later, on an unrelated render. So in that case we store nothing.
+  //While a batch request runs the selection is locked, so every press does nothing.
   function press(action: SelectionAction, plan: FocusPlan) {
+    if (pendingRef.current) {
+      return;
+    }
     if (selectionReducer(state, action) === state) {
       return;
     }
     focusPlan.current = plan;
     dispatch(action);
+  }
+
+  //Sends the selected ids once. Success clears the selection, a conflict removes the missing ids,
+  //any other failure keeps the selection and shows the safe message. Nothing here throws.
+  async function runUpdate(ids: readonly string[], completed: boolean) {
+    const button: FocusPlan = completed ? "complete" : "active";
+    try {
+      const outcome = await sendUpdate([...ids], completed);
+      outcome.match(
+        ({ updatedCount }) => {
+          focusPlan.current = "count";
+          dispatch({ type: "updated", count: updatedCount, completed });
+        },
+        (error) =>
+          match(error)
+            .with({ type: "BATCH_CONFLICT" }, ({ missingIds }) => {
+              const left = ids.filter((id) => !missingIds.includes(id)).length;
+              focusPlan.current = left === 0 ? "count" : button;
+              dispatch({ type: "conflict", missingIds });
+            })
+            .with({ type: "API_ERROR" }, { type: "NETWORK_ERROR" }, { type: "PARSE_ERROR" }, () => {
+              focusPlan.current = button;
+              setFailed(true);
+            })
+            .exhaustive(),
+      );
+    } catch {
+      focusPlan.current = button;
+      setFailed(true);
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
+  }
+
+  function onUpdate(completed: boolean) {
+    if (pendingRef.current || state.mode !== "on" || state.selected.length === 0) {
+      return;
+    }
+    pendingRef.current = true;
+    setPending(true);
+    setFailed(false);
+    void runUpdate(state.selected, completed);
   }
 
   const active = state.mode === "on";
@@ -117,21 +183,39 @@ export function useSelectionFlow({
     entryDisabled: loading,
     count,
     atLimit,
-    countText: active ? selectionCountText(count, notice) : "",
+    countText: active ? (pending ? updatingText(count) : selectionCountText(count, notice)) : "",
     selectVisibleLabel: buildSelectVisibleLabel(visibleIds.length),
-    selectVisibleDisabled: visibleIds.length === 0 || allSelected(visibleIds, state) || atLimit,
-    clearDisabled: count === 0,
+    selectVisibleDisabled:
+      pending || visibleIds.length === 0 || allSelected(visibleIds, state) || atLimit,
+    clearDisabled: pending || count === 0,
     isSelected: (id) => selectedIds.has(id),
     //At the limit, unselected rows are disabled. A selected row stays enabled so it can be unselected.
-    isDisabled: (id) => atLimit && !selectedIds.has(id),
+    //While a batch request runs every row is disabled, so nothing can change what the success will clear.
+    isDisabled: (id) => pending || (atLimit && !selectedIds.has(id)),
     entryRef,
     countRef,
     onEnter: () => press({ type: "enter", scopeKey }, "count"),
     onExit: () => press({ type: "exit" }, "entry"),
-    onToggle: (id) => dispatch({ type: "toggle", id }),
+    onToggle: (id) => {
+      if (!pendingRef.current) dispatch({ type: "toggle", id });
+    },
     onSelectVisible: () => press({ type: "selectVisible", ids: visibleIds }, "count"),
     onClear: () => press({ type: "clear" }, "count"),
     onRowDeleted: (id) => dispatch({ type: "removed", id }),
-    locked: false,
+    locked: pending,
+    update: active
+      ? {
+          completeLabel: markCompleteLabel(count),
+          activeLabel: markActiveLabel(count),
+          disabled: pending || count === 0,
+          pending,
+          failureText: failed ? UPDATE_FAILURE_TEXT : null,
+          helpText: UPDATE_HELP_TEXT,
+          completeRef,
+          activeRef,
+          onComplete: () => onUpdate(true),
+          onActive: () => onUpdate(false),
+        }
+      : undefined,
   };
 }
