@@ -3,8 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { createDb, type Db } from "../../lib/db.js";
-import { config } from "../../lib/config.js";
+import { createDb, type Db } from "@/lib/db.js";
+import { config } from "@/lib/config.js";
 
 process.env.DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
@@ -37,7 +37,7 @@ describe("GET /todos — status query handling (real app, real database)", () =>
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -84,7 +84,7 @@ describe("GET /todos — search query handling (real app, real database)", () =>
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -211,7 +211,7 @@ describe("GET /todos — pagination query handling (real app, real database)", (
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -290,7 +290,7 @@ describe("GET /todos/:id — single todo lookup (real app, real database)", () =
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -338,7 +338,7 @@ describe("PUT /todos/:id — replace todo (real app, real database)", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -473,7 +473,7 @@ describe("PATCH /todos/:id — partial update (real app, real database)", () => 
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -672,7 +672,7 @@ describe("PATCH /todos — bulk set completed status (real app, real database)",
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -768,7 +768,7 @@ describe("DELETE /todos?status=completed — bulk delete completed todos (real a
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -855,7 +855,7 @@ describe("POST /todos/toggle-all — toggle every todo's completed status (real 
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
@@ -900,7 +900,7 @@ describe("PATCH /todos/batch — update selected todos (real app, real database)
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    const { buildApp } = await import("../../app.js");
+    const { buildApp } = await import("@/app.js");
     app = await buildApp();
     await app.ready();
     await clearAllTodos();
