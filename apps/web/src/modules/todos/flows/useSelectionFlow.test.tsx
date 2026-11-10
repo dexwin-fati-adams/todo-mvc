@@ -430,7 +430,7 @@ describe("useSelectionFlow", () => {
   });
 
   // 67
-  it("renders without a QueryClient and makes no network call", () => {
+  it("makes no network call for selection changes", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { result } = setup();
 
