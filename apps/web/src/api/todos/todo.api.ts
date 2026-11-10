@@ -12,6 +12,8 @@ import {
   type CreateTodoRequest,
   type ReplaceTodoRequest,
   type Status,
+  type UpdateBatchRequest,
+  type UpdateBatchResponse,
 } from "contracts";
 import { config } from "@/config";
 
@@ -22,6 +24,11 @@ type ApiError = { type: "API_ERROR"; status: number; message: string };
 type NetworkError = { type: "NETWORK_ERROR"; message: string };
 type ParseError = { type: "PARSE_ERROR"; message: string };
 export type ClientError = ApiError | NetworkError | ParseError;
+
+// The batch route has one more expected failure: some selected ids no longer exist (409, nothing changed).
+// It is a separate union so the exhaustive matches on ClientError stay untouched.
+export type BatchConflictError = { type: "BATCH_CONFLICT"; missingIds: string[] };
+export type UpdateBatchError = ClientError | BatchConflictError;
 
 //UpdateTodoRequest is the body for PATCH /todos/:id. It is taken from the shared schema, so the adapter and the API agree.
 export type UpdateTodoRequest = z.infer<typeof UpdateTodoRequestSchema>;
