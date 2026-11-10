@@ -13,6 +13,10 @@ export interface FindAllResult {
   totalItems: number;
 }
 
+// ok: every id was found and set. conflict: some ids do not exist and nothing was changed.
+export type BatchResult =
+  { kind: "ok"; updatedCount: number } | { kind: "conflict"; missingIds: string[] };
+
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
   findAll(
@@ -32,6 +36,7 @@ export interface TodoRepository {
   deleteAllCompleted(): ResultAsync<void, TodoDbError>;
   setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError>;
   deleteCompleted(): ResultAsync<number, TodoDbError>;
+  updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoDbError>;
 }
 
 //In LIKE and ILIKE, % means "any text", _ means "any one character", and \ is the escape character.
@@ -178,6 +183,12 @@ export function createTodoRepository(db: Db): TodoRepository {
           tx.delete(todosTable).where(eq(todosTable.completed, true)).returning(),
           (cause) => TodoErrors.dbError(cause),
         ).map((rows) => rows.length);
+      },
+      // PLACEHOLDER (red phase): replaced by the transactional update.
+      updateBatch(_ids: string[], _completed: boolean): ResultAsync<BatchResult, TodoDbError> {
+        return ResultAsync.fromSafePromise(
+          Promise.resolve<BatchResult>({ kind: "ok", updatedCount: 0 }),
+        );
       },
     };
   }

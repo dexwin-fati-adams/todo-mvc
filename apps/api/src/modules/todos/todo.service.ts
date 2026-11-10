@@ -1,8 +1,8 @@
-import { err, ok, errAsync } from "neverthrow";
+import { err, ok, errAsync, okAsync } from "neverthrow";
 import type { Result, ResultAsync } from "neverthrow";
 import { match } from "ts-pattern";
 import { v4 as uuid } from "uuid";
-import type { TodoRepository } from "./todo.repository.js";
+import type { BatchResult, TodoRepository } from "./todo.repository.js";
 import { TodoErrors, type TodoError } from "./todo.errors.js";
 import type { Todo, TodoListResponse, Status } from "contracts";
 import type { TodoDbRow } from "@/lib/schema.js";
@@ -85,6 +85,7 @@ export interface TodoService {
   clearCompleted(): ResultAsync<void, TodoError>;
   setAllCompleted(completed: boolean): ResultAsync<number, TodoError>;
   deleteCompleted(): ResultAsync<number, TodoError>;
+  updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoError>;
 }
 
 //This code is using ts-pattern to handle all possible results.
@@ -202,6 +203,11 @@ export function createTodoService(repo: TodoRepository): TodoService {
     //The number means the number of completed todos deleted, not the todo's ID.
     deleteCompleted(): ResultAsync<number, TodoError> {
       return repo.deleteCompleted();
+    },
+
+    // PLACEHOLDER (red phase): replaced by the repository call.
+    updateBatch(_ids: string[], _completed: boolean): ResultAsync<BatchResult, TodoError> {
+      return okAsync({ kind: "ok", updatedCount: 0 });
     },
   };
 }
