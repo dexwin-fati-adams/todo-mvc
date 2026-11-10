@@ -12,6 +12,7 @@ import {
   selectVisibleLabel as buildSelectVisibleLabel,
 } from "@/modules/todos/flows/selectionLabels";
 import { focusIsLost } from "@/modules/todos/flows/focusIsLost";
+import type { SelectionUpdateControls } from "@/modules/todos/components/SelectionControls";
 
 export type UseSelectionFlowParams = {
   //The scope is the status and the committed search together. The page and the page size are not part of it.
@@ -45,6 +46,10 @@ export type SelectionFlow = {
   onSelectVisible: () => void;
   onClear: () => void;
   onRowDeleted: (id: string) => void;
+  //True while a batch request runs: the selection is locked and every selection control is inert.
+  locked: boolean;
+  //The two update buttons, the pending state and the failure alert. PLACEHOLDER (red phase): not drawn yet.
+  update?: SelectionUpdateControls;
 };
 
 //After a press, focus goes to the count line (a plain element with tabIndex -1) or to the Select todos button.
@@ -127,5 +132,6 @@ export function useSelectionFlow({
     onSelectVisible: () => press({ type: "selectVisible", ids: visibleIds }, "count"),
     onClear: () => press({ type: "clear" }, "count"),
     onRowDeleted: (id) => dispatch({ type: "removed", id }),
+    locked: false,
   };
 }
