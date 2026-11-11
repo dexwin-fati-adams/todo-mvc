@@ -3603,6 +3603,326 @@ test.describe("Selection mode (browser)", () => {
   });
 });
 
+test.describe("Update selected todos (browser)", () => {
+  const BATCH_WEB = "http://localhost:4000";
+  const toolbarOf = (page: Page) => page.getByRole("group", { name: "Selection mode" });
+  const statusOf = (page: Page) => toolbarOf(page).getByRole("status");
+  const boxOf = (page: Page, title: string) =>
+    page.getByRole("checkbox", { name: `Select “${title}”` });
+  const markComplete = (page: Page, n: number) =>
+    page.getByRole("button", {
+      name: `Mark ${n} selected ${n === 1 ? "todo" : "todos"} as complete`,
+    });
+  const markActive = (page: Page, n: number) =>
+    page.getByRole("button", {
+      name: `Mark ${n} selected ${n === 1 ? "todo" : "todos"} as active`,
+    });
+
+  async function completedOf(request: APIRequestContext, id: string): Promise<boolean> {
+    const res = await request.get(`/todos/${id}`);
+    return ((await res.json()) as Todo).completed;
+  }
+
+  async function seedThree(request: APIRequestContext) {
+    const a = await createTodo(request, "Alpha");
+    const b = await createTodo(request, "Bravo");
+    const c = await createTodo(request, "Charlie");
+    return { a, b, c };
+  }
+
+  async function openAndSelect(page: Page, titles: string[]) {
+    await page.goto(BATCH_WEB);
+    await page.getByRole("button", { name: "Select todos" }).click();
+    for (const title of titles) await boxOf(page, title).check();
+  }
+
+  // 92
+  test("API: PATCH /todos/batch returns exactly { updatedCount } and changes the listed todos", async ({
+    request,
+  }) => {
+    const { a, b, c } = await seedThree(request);
+    const res = await request.patch("/todos/batch", {
+      data: { ids: [a.id, b.id], completed: true },
+    });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ updatedCount: 2 });
+    expect(await completedOf(request, a.id)).toBe(true);
+    expect(await completedOf(request, b.id)).toBe(true);
+    expect(await completedOf(request, c.id)).toBe(false);
+  });
+
+  // 93
+  test("API: invalid bodies return 400 VALIDATION_ERROR", async ({ request }) => {
+    const { a } = await seedThree(request);
+    const bodies: unknown[] = [
+      { ids: [], completed: true },
+      { ids: [a.id, a.id], completed: true },
+      { ids: ["nope"], completed: true },
+      { ids: [a.id], completed: "yes" },
+      { ids: [a.id], completed: true, extra: 1 },
+    ];
+    for (const data of bodies) {
+      const res = await request.patch("/todos/batch", { data: data as object });
+      expect(res.status()).toBe(400);
+      expect(((await res.json()) as ErrorResponse).error).toBe("VALIDATION_ERROR");
+    }
+  });
+
+  // 94
+  test("API: a missing id returns 409 batch_conflict and changes nothing", async ({ request }) => {
+    const { a } = await seedThree(request);
+    const res = await request.patch("/todos/batch", {
+      data: { ids: [a.id, NONEXISTENT_ID], completed: true },
+    });
+    expect(res.status()).toBe(409);
+    const body = (await res.json()) as { error: string; missingIds: string[] };
+    expect(body.error).toBe("batch_conflict");
+    expect(body.missingIds).toEqual([NONEXISTENT_ID]);
+    expect(await completedOf(request, a.id)).toBe(false);
+  });
+
+  // 95
+  test("both buttons show in selection mode and are disabled with nothing selected", async ({
+    page,
+    request,
+  }) => {
+    await seedThree(request);
+    await openAndSelect(page, []);
+
+    await expect(page.getByRole("button", { name: /as complete$/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /as active$/ })).toBeDisabled();
+  });
+
+  // 96
+  test("marking three complete sends one request with the exact body and clears the selection", async ({
+    page,
+    request,
+  }) => {
+    const { a, b, c } = await seedThree(request);
+    const writes: string[] = [];
+    const batches: unknown[] = [];
+    page.on("request", (r) => {
+      if (r.method() !== "GET") writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
+      if (r.method() === "PATCH" && r.url().endsWith("/todos/batch"))
+        batches.push(r.postDataJSON());
+    });
+    await openAndSelect(page, ["Alpha", "Bravo", "Charlie"]);
+
+    await markComplete(page, 3).click();
+
+    await expect(statusOf(page)).toHaveText(
+      "0 of 100 selected. Marked 3 selected todos as complete.",
+    );
+    expect(batches).toEqual([{ ids: [a.id, b.id, c.id], completed: true }]);
+    expect(writes).toEqual(["PATCH /todos/batch"]);
+    for (const todo of [a, b, c]) expect(await completedOf(request, todo.id)).toBe(true);
+    await expect(boxOf(page, "Alpha")).not.toBeChecked();
+    await expect(markComplete(page, 0)).toBeDisabled();
+  });
+
+  // 97
+  test("marking active works the same way", async ({ page, request }) => {
+    const { a, b } = await seedThree(request);
+    await request.patch("/todos/batch", { data: { ids: [a.id, b.id], completed: true } });
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+
+    await markActive(page, 2).click();
+
+    await expect(statusOf(page)).toHaveText(
+      "0 of 100 selected. Marked 2 selected todos as active.",
+    );
+    expect(await completedOf(request, a.id)).toBe(false);
+    expect(await completedOf(request, b.id)).toBe(false);
+  });
+
+  // 99
+  test("with 120 todos and page size 100, selecting a page of 100 changes exactly 100", async ({
+    page,
+  }) => {
+    await db.execute(sql`
+      INSERT INTO todos (id, title, completed, created_at)
+      SELECT gen_random_uuid()::text, 'Bulk ' || lpad(g::text, 3, '0'), false,
+             now() + (g || ' seconds')::interval
+      FROM generate_series(1, 120) AS g
+    `);
+    const batches: unknown[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "PATCH" && r.url().endsWith("/todos/batch"))
+        batches.push(r.postDataJSON());
+    });
+    await page.goto(BATCH_WEB);
+    await page.getByRole("combobox", { name: "Todos per page" }).selectOption("100");
+    await page.getByRole("button", { name: "Select todos" }).click();
+    await page.getByRole("button", { name: "Select all 100 todos on this page" }).click();
+    await expect(statusOf(page)).toHaveText("100 of 100 selected. Limit reached.");
+
+    await markComplete(page, 100).click();
+
+    await expect(statusOf(page)).toContainText("Marked 100 selected todos as complete.");
+    expect(batches).toHaveLength(1);
+    const done = await db.execute(sql`SELECT count(*)::int AS n FROM todos WHERE completed = true`);
+    expect((done.rows[0] as { n: number }).n).toBe(100);
+  });
+
+  // 100
+  test("while the response is held the buttons are disabled, the pending text shows, and no second request is sent", async ({
+    page,
+    request,
+  }) => {
+    const { a } = await seedThree(request);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let seen = 0;
+    await page.route("**/todos/batch", async (route) => {
+      seen += 1;
+      await gate;
+      await route.continue();
+    });
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+
+    await markComplete(page, 2).click();
+
+    await expect(statusOf(page)).toHaveText("Updating 2 selected todos…");
+    await expect(toolbarOf(page)).toHaveAttribute("aria-busy", "true");
+    await expect(page.getByRole("button", { name: /as complete$/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /as active$/ })).toBeDisabled();
+    await expect(boxOf(page, "Charlie")).toBeDisabled();
+    expect(seen).toBe(1);
+
+    release();
+    await expect(statusOf(page)).toContainText("Marked 2 selected todos as complete.");
+    expect(seen).toBe(1);
+    expect(await completedOf(request, a.id)).toBe(true);
+  });
+
+  // 101
+  test("a 503 shows the safe alert with no server text, keeps the selection, and a retry works", async ({
+    page,
+    request,
+  }) => {
+    const { a, b } = await seedThree(request);
+    await page.route("**/todos/batch", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "SERVICE_UNAVAILABLE",
+          message: "Database error, please retry",
+        }),
+      }),
+    );
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+
+    await markComplete(page, 2).click();
+
+    const alert = page
+      .getByRole("alert")
+      .filter({ hasText: "Could not update the selected todos" });
+    await expect(alert).toHaveText("Could not update the selected todos. Please try again.");
+    await expect(alert).not.toContainText(/503|Database/);
+    await expect(boxOf(page, "Alpha")).toBeChecked();
+    await expect(boxOf(page, "Bravo")).toBeChecked();
+    expect(await completedOf(request, a.id)).toBe(false);
+
+    await page.unroute("**/todos/batch");
+    await markComplete(page, 2).click();
+
+    await expect(statusOf(page)).toContainText("Marked 2 selected todos as complete.");
+    expect(await completedOf(request, b.id)).toBe(true);
+  });
+
+  // 102
+  test("a todo deleted after it was selected is removed by the 409, nothing changes, and a retry updates the rest", async ({
+    page,
+    request,
+  }) => {
+    const { a, b, c } = await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo", "Charlie"]);
+    expect((await request.delete(`/todos/${b.id}`)).status()).toBe(204);
+
+    await markComplete(page, 3).click();
+
+    await expect(statusOf(page)).toContainText(
+      "Nothing was changed. 1 selected todo no longer exists and was removed from the selection.",
+    );
+    expect(await completedOf(request, a.id)).toBe(false);
+    expect(await completedOf(request, c.id)).toBe(false);
+    await expect(boxOf(page, "Bravo")).toHaveCount(0);
+    await expect(boxOf(page, "Alpha")).toBeChecked();
+
+    await markComplete(page, 2).click();
+
+    await expect(statusOf(page)).toContainText("Marked 2 selected todos as complete.");
+    expect(await completedOf(request, a.id)).toBe(true);
+    expect(await completedOf(request, c.id)).toBe(true);
+  });
+
+  // 103
+  test("when every selected todo was deleted first, the selection is empty and the buttons are disabled", async ({
+    page,
+    request,
+  }) => {
+    const { a, b } = await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+    await request.delete(`/todos/${a.id}`);
+    await request.delete(`/todos/${b.id}`);
+
+    await markComplete(page, 2).click();
+
+    await expect(statusOf(page)).toContainText(
+      "Nothing was changed. 2 selected todos no longer exist",
+    );
+    await expect(page.getByRole("button", { name: /as complete$/ })).toBeDisabled();
+  });
+
+  // 105
+  test("keyboard: Tab to an action button and press Enter, focus ends on the count line", async ({
+    page,
+    request,
+  }) => {
+    await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+    const button = markComplete(page, 2);
+    for (
+      let i = 0;
+      i < 30 && !(await button.evaluate((el) => el === document.activeElement));
+      i++
+    ) {
+      await page.keyboard.press("Tab");
+    }
+    await expect(button).toBeFocused();
+
+    await page.keyboard.press("Enter");
+
+    await expect(statusOf(page)).toContainText("Marked 2 selected todos as complete.");
+    await expect(statusOf(page)).toBeFocused();
+  });
+
+  // 106
+  test("the action buttons have their full names", async ({ page, request }) => {
+    await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo", "Charlie"]);
+
+    await expect(markComplete(page, 3)).toBeVisible();
+    await expect(markActive(page, 3)).toBeVisible();
+  });
+
+  // 107
+  test("after a reload the server shows the saved state", async ({ page, request }) => {
+    const { a } = await seedThree(request);
+    await openAndSelect(page, ["Alpha"]);
+    await markComplete(page, 1).click();
+    await expect(statusOf(page)).toContainText("Marked 1 selected todo as complete.");
+
+    await page.reload();
+
+    expect(await completedOf(request, a.id)).toBe(true);
+    await expect(page.getByRole("button", { name: "Select todos" })).toBeVisible();
+  });
+});
+
 let closed = false;
 test.afterAll(async () => {
   if (closed) return;
