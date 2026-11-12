@@ -407,38 +407,3 @@ describe("useSelectionFlow: stale failure alert", () => {
     expect(result.current.update?.failureText).toBeNull();
   });
 });
-
-describe("useSelectionFlow: stale failure alert", () => {
-  it("clears the failure alert when the user leaves selection mode and comes back", async () => {
-    updateSelected.mockResolvedValueOnce(err(unavailable));
-    const { result } = setup();
-    await act(async () => result.current.update?.onComplete());
-    expect(result.current.update?.failureText).toBe(FAILURE);
-
-    act(() => result.current.onExit());
-    act(() => result.current.onEnter());
-
-    expect(result.current.update?.failureText).toBeNull();
-  });
-
-  it("clears the failure alert when the scope changes", async () => {
-    updateSelected.mockResolvedValueOnce(err(unavailable));
-    const { result, rerender } = setup();
-    await act(async () => result.current.update?.onComplete());
-    expect(result.current.update?.failureText).toBe(FAILURE);
-
-    rerender({ scopeKey: ACTIVE, visibleIds: ["a", "b"], loading: false });
-
-    expect(result.current.update?.failureText).toBeNull();
-  });
-
-  it("clears the failure alert when the selection is cleared", async () => {
-    updateSelected.mockResolvedValueOnce(err(unavailable));
-    const { result } = setup();
-    await act(async () => result.current.update?.onComplete());
-
-    act(() => result.current.onClear());
-
-    expect(result.current.update?.failureText).toBeNull();
-  });
-});
