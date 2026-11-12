@@ -852,3 +852,120 @@ describe("formatError", () => {
     expect(formatError({ type: "PARSE_ERROR", message: "Bad" })).toBe("Parse error: Bad");
   });
 });
+
+describe("todoApi.updateBatch", () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const b = "22222222-2222-4222-8222-222222222222";
+  const c = "33333333-3333-4333-8333-333333333333";
+
+  // 36
+  it("sends PATCH /todos/batch with exactly { ids, completed } as JSON", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: 2 })));
+
+    await todoApi.updateBatch({ ids: [a, b], completed: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(String(init?.body))).toEqual({ ids: [a, b], completed: true });
+    expect((init?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(calledUrl(fetchMock).pathname).toBe("/todos/batch");
+  });
+
+  // 37
+  it("sends no query string", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: 1 })));
+
+    await todoApi.updateBatch({ ids: [a], completed: false });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(calledUrl(fetchMock).search).toBe("");
+  });
+
+  // 38
+  it("returns ok({ updatedCount }) for a valid 200 body", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: 3 })));
+
+    const result = await todoApi.updateBatch({ ids: [a, b, c], completed: true });
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ updatedCount: 3 });
+  });
+
+  // 39
+  it("returns PARSE_ERROR when a 200 body does not match the schema", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: "three" })));
+
+    const result = await todoApi.updateBatch({ ids: [a], completed: true });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+  });
+
+  // 40
+  it("returns BATCH_CONFLICT with the missing ids for a 409 batch_conflict body", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse(
+          { error: "batch_conflict", message: "Nothing was changed.", missingIds: [b] },
+          409,
+        ),
+      ),
+    );
+
+    const result = await todoApi.updateBatch({ ids: [a, b], completed: true });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toEqual({ type: "BATCH_CONFLICT", missingIds: [b] });
+  });
+
+  // 41
+  it("returns API_ERROR with status 409 when the 409 body does not match the contract", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "batch_conflict", message: "No ids here" }, 409)),
+    );
+
+    const result = await todoApi.updateBatch({ ids: [a], completed: true });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({ type: "API_ERROR", status: 409 });
+  });
+
+  // 42
+  it("returns typed errors for 400, 503 and a rejected fetch, and never throws", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "VALIDATION_ERROR", message: "bad body" }, 400)),
+    );
+    const bad = await todoApi.updateBatch({ ids: [a], completed: true });
+    expect(bad._unsafeUnwrapErr()).toMatchObject({ type: "API_ERROR", status: 400 });
+
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Down" }, 503)),
+    );
+    const down = await todoApi.updateBatch({ ids: [a], completed: true });
+    expect(down._unsafeUnwrapErr()).toMatchObject({ type: "API_ERROR", status: 503 });
+
+    stubFetch(() => Promise.reject(new Error("offline")));
+    const offline = await todoApi.updateBatch({ ids: [a], completed: true });
+    expect(offline._unsafeUnwrapErr().type).toBe("NETWORK_ERROR");
+  });
+
+  // 43
+  it("makes no request and returns a typed error for an invalid request", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ updatedCount: 1 })));
+    const tooMany = Array.from(
+      { length: 101 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    );
+
+    const empty = await todoApi.updateBatch({ ids: [], completed: true });
+    const duplicates = await todoApi.updateBatch({ ids: [a, a], completed: true });
+    const over = await todoApi.updateBatch({ ids: tooMany, completed: true });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    for (const result of [empty, duplicates, over]) {
+      expect(result.isErr()).toBe(true);
+      expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+    }
+  });
+});

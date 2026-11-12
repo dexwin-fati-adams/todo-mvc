@@ -29,6 +29,7 @@ function makeMockRepository(): TodoRepository {
     deleteAllCompleted: vi.fn(),
     setAllCompleted: vi.fn(),
     deleteCompleted: vi.fn(),
+    updateBatch: vi.fn(),
   };
 }
 
@@ -651,6 +652,69 @@ describe("deleteCompleted", () => {
 
     const service = createTodoService(repo);
     const result = await service.deleteCompleted();
+
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) {
+      expect(result.error.type).toBe("TODO_DB_ERROR");
+    }
+  });
+});
+
+// ─── updateBatch ──────────────────────────────────────────────────────────────
+
+describe("updateBatch", () => {
+  let repo: TodoRepository;
+  const ids = [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c",
+  ];
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("returns ok with updatedCount when every id exists (11)", async () => {
+    vi.mocked(repo.updateBatch).mockReturnValue(okAsync({ kind: "ok", updatedCount: 3 }));
+
+    const result = await createTodoService(repo).updateBatch(ids, true);
+
+    expect(vi.mocked(repo.updateBatch)).toHaveBeenCalledWith(ids, true);
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value).toEqual({ kind: "ok", updatedCount: 3 });
+    }
+  });
+
+  it("returns conflict with exactly the missing ids, in request order (12)", async () => {
+    vi.mocked(repo.updateBatch).mockReturnValue(
+      okAsync({ kind: "conflict", missingIds: [ids[0]!, ids[2]!] }),
+    );
+
+    const result = await createTodoService(repo).updateBatch(ids, false);
+
+    expect(vi.mocked(repo.updateBatch)).toHaveBeenCalledWith(ids, false);
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value).toEqual({ kind: "conflict", missingIds: [ids[0], ids[2]] });
+    }
+  });
+
+  it("returns conflict with all ids when all are missing (13)", async () => {
+    vi.mocked(repo.updateBatch).mockReturnValue(okAsync({ kind: "conflict", missingIds: ids }));
+
+    const result = await createTodoService(repo).updateBatch(ids, true);
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) {
+      expect(result.value).toEqual({ kind: "conflict", missingIds: ids });
+    }
+  });
+
+  it("passes a database failure on as an error value, never throws (14)", async () => {
+    vi.mocked(repo.updateBatch).mockReturnValue(errAsync(TodoErrors.dbError(new Error("boom"))));
+
+    const result = await createTodoService(repo).updateBatch(ids, true);
 
     expect(result.isErr()).toBe(true);
     if (result.isErr()) {

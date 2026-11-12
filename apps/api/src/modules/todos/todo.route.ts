@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import {
+  type BatchConflictResponse,
   CreateTodoRequestSchema,
   DeleteCompletedQuerySchema,
   DeleteCompletedResponseSchema,
@@ -10,6 +11,8 @@ import {
   TodoIdParamSchema,
   TodoListResponseSchema,
   TodoSchema,
+  UpdateBatchRequestSchema,
+  UpdateBatchResponseSchema,
   UpdateTodoRequestSchema,
 } from "contracts";
 import { match } from "ts-pattern";
@@ -205,6 +208,48 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
           request,
           context: "todos/replace/200",
         }),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
+      })
+      .exhaustive();
+  });
+
+  // PATCH /todos/batch — set completed on exactly the listed todos, all or nothing.
+  // 400 for a body that breaks the contract, 409 batch_conflict (nothing changed) when
+  // any id does not exist. "batch" is a fixed path, so it wins over the :id parameter.
+  fastify.patch("/todos/batch", {}, async (request, reply) => {
+    const body = UpdateBatchRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
+    }
+
+    const result = await todoService.updateBatch(body.data.ids, body.data.completed);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        match(value)
+          .with({ kind: "ok" }, ({ updatedCount }) =>
+            sendValidated({
+              schema: UpdateBatchResponseSchema,
+              body: { updatedCount },
+              status: 200,
+              reply,
+              request,
+              context: "todos/update-batch/200",
+            }),
+          )
+          .with({ kind: "conflict" }, ({ missingIds }) => {
+            const conflict: BatchConflictResponse = {
+              error: "batch_conflict",
+              message: `Nothing was changed. ${missingIds.length} selected todo(s) no longer exist.`,
+              missingIds,
+            };
+            return reply.status(409).send(conflict);
+          })
+          .exhaustive(),
       )
       .with({ ok: false }, ({ error }) => {
         const { status, body: errorBody } = toHttpError(error);

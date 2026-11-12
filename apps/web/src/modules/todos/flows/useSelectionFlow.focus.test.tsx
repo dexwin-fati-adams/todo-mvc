@@ -1,8 +1,13 @@
 import { useRef } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useSelectionFlow } from "@/modules/todos/flows/useSelectionFlow";
+
+const { updateSelected } = vi.hoisted(() => ({ updateSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
+  useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
+}));
 
 //A small page: Select todos, then the toolbar. "Fallback" stands for the search box.
 //tick only forces another render, the way an unrelated update would.

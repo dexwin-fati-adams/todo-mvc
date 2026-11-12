@@ -30,6 +30,8 @@ export function selectionNoticeText(notice: SelectionNotice): string {
       () => "Selection cleared because the status or search changed.",
     )
     .with({ kind: "cleared" }, () => "Selection cleared.")
+    .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
+    .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
     .exhaustive();
 }
 
@@ -46,4 +48,34 @@ export function selectionCountText(count: number, notice: SelectionNotice | null
 
   const sentence = selectionNoticeText(notice);
   return base.endsWith(".") ? `${base} ${sentence}` : `${base}. ${sentence}`;
+}
+
+// ---- Update selected todos ----
+export const UPDATE_FAILURE_TEXT = "Could not update the selected todos. Please try again.";
+export const UPDATE_HELP_TEXT = "Changes only the selected todos, on every page.";
+
+function todoWord(count: number): string {
+  return count === 1 ? "todo" : "todos";
+}
+
+export function markCompleteLabel(count: number): string {
+  return `Mark ${count} selected ${todoWord(count)} as complete`;
+}
+
+export function markActiveLabel(count: number): string {
+  return `Mark ${count} selected ${todoWord(count)} as active`;
+}
+
+export function updatingText(count: number): string {
+  return `Updating ${count} selected ${todoWord(count)}…`;
+}
+
+function updatedSentence(count: number, completed: boolean): string {
+  return `Marked ${count} selected ${todoWord(count)} as ${completed ? "complete" : "active"}.`;
+}
+
+function conflictSentence(removed: number): string {
+  return removed === 1
+    ? "Nothing was changed. 1 selected todo no longer exists and was removed from the selection."
+    : `Nothing was changed. ${removed} selected todos no longer exist and were removed from the selection.`;
 }

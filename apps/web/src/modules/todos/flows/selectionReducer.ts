@@ -4,7 +4,11 @@ import { match } from "ts-pattern";
 export const SELECTION_LIMIT = 100;
 
 export type SelectionNotice =
-  { kind: "limit"; skipped: number } | { kind: "scope-cleared" } | { kind: "cleared" };
+  | { kind: "limit"; skipped: number }
+  | { kind: "scope-cleared" }
+  | { kind: "cleared" }
+  | { kind: "updated"; count: number; completed: boolean }
+  | { kind: "conflict"; removed: number };
 
 export type SelectionState =
   | { mode: "off" }
@@ -22,7 +26,9 @@ export type SelectionAction =
   | { type: "selectVisible"; ids: readonly string[] }
   | { type: "clear" }
   | { type: "scopeChanged"; scopeKey: string }
-  | { type: "removed"; id: string };
+  | { type: "removed"; id: string }
+  | { type: "updated"; count: number; completed: boolean }
+  | { type: "conflict"; missingIds: readonly string[] };
 
 type SelectionOn = Extract<SelectionState, { mode: "on" }>;
 
@@ -88,6 +94,23 @@ function removeId(state: SelectionOn, id: string): SelectionOn {
   return { ...state, selected: state.selected.filter((selectedId) => selectedId !== id) };
 }
 
+//A finished update empties the selection and keeps the mode on. The notice carries the server's count and the direction.
+function applyUpdated(state: SelectionOn, count: number, completed: boolean): SelectionOn {
+  return { ...state, selected: [], notice: { kind: "updated", count, completed } };
+}
+
+//A conflict removes only the ids that are both selected and named as missing. The rest keep their order.
+//If none of the named ids is selected, nothing changes and the same state comes back.
+function applyConflict(state: SelectionOn, missingIds: readonly string[]): SelectionOn {
+  const missing = new Set(missingIds);
+  const remaining = state.selected.filter((id) => !missing.has(id));
+  const removed = state.selected.length - remaining.length;
+  if (removed === 0) {
+    return state;
+  }
+  return { ...state, selected: remaining, notice: { kind: "conflict", removed } };
+}
+
 //Every rule for selection mode lives here. It is pure, it never mutates its input,
 // and it returns the same state object when nothing changes. Both matches are exhaustive,
 // so a new state or action that is not handled is a compile error and not a runtime surprise.
@@ -108,6 +131,8 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           { type: "clear" },
           { type: "scopeChanged" },
           { type: "removed" },
+          { type: "updated" },
+          { type: "conflict" },
           () => off,
         )
         .exhaustive(),
@@ -121,6 +146,10 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
         .with({ type: "clear" }, () => clearAll(current))
         .with({ type: "scopeChanged" }, ({ scopeKey }) => changeScope(current, scopeKey))
         .with({ type: "removed" }, ({ id }) => removeId(current, id))
+        .with({ type: "updated" }, ({ count, completed }) =>
+          applyUpdated(current, count, completed),
+        )
+        .with({ type: "conflict" }, ({ missingIds }) => applyConflict(current, missingIds))
         .exhaustive(),
     )
     .exhaustive();

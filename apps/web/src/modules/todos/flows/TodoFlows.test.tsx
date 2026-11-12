@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { err, ok, type Result } from "neverthrow";
-import type { Status, Todo } from "contracts";
+import type { SetAllCompletedResponse, Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";
@@ -11,6 +11,11 @@ import { useDeleteTodo } from "@/modules/todos/hooks/useDeleteTodo";
 import { useReplaceTodo } from "@/modules/todos/hooks/useReplaceTodo";
 
 import { TodoFlows } from "@/modules/todos/flows/TodoFlows";
+
+const { updateSelected } = vi.hoisted(() => ({ updateSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
+  useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
+}));
 
 vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");

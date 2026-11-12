@@ -9,6 +9,11 @@ import {
   type UseSelectionFlowParams,
 } from "@/modules/todos/flows/useSelectionFlow";
 
+const { updateSelected } = vi.hoisted(() => ({ updateSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
+  useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
+}));
+
 const ALL = JSON.stringify(["all", null]);
 const ACTIVE = JSON.stringify(["active", null]);
 
@@ -425,7 +430,7 @@ describe("useSelectionFlow", () => {
   });
 
   // 67
-  it("renders without a QueryClient and makes no network call", () => {
+  it("makes no network call for selection changes", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { result } = setup();
 
