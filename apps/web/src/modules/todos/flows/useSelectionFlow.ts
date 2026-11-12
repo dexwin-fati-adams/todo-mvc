@@ -53,8 +53,6 @@ export type SelectionFlow = {
   onSelectVisible: () => void;
   onClear: () => void;
   onRowDeleted: (id: string) => void;
-  //True while a batch request runs: the selection is locked and every selection control is inert.
-  locked: boolean;
   //The two update buttons, the pending state and the failure alert. Present only while selection mode is on.
   update?: SelectionUpdateControls;
 };
@@ -88,6 +86,7 @@ export function useSelectionFlow({
   const [seenScope, setSeenScope] = useState(scopeKey);
   if (seenScope !== scopeKey) {
     setSeenScope(scopeKey);
+    setFailed(false);
     dispatch({ type: "scopeChanged", scopeKey });
   }
 
@@ -194,15 +193,23 @@ export function useSelectionFlow({
     isDisabled: (id) => pending || (atLimit && !selectedIds.has(id)),
     entryRef,
     countRef,
-    onEnter: () => press({ type: "enter", scopeKey }, "count"),
-    onExit: () => press({ type: "exit" }, "entry"),
+    onEnter: () => {
+      setFailed(false);
+      press({ type: "enter", scopeKey }, "count");
+    },
+    onExit: () => {
+      setFailed(false);
+      press({ type: "exit" }, "entry");
+    },
     onToggle: (id) => {
       if (!pendingRef.current) dispatch({ type: "toggle", id });
     },
     onSelectVisible: () => press({ type: "selectVisible", ids: visibleIds }, "count"),
-    onClear: () => press({ type: "clear" }, "count"),
+    onClear: () => {
+      setFailed(false);
+      press({ type: "clear" }, "count");
+    },
     onRowDeleted: (id) => dispatch({ type: "removed", id }),
-    locked: pending,
     update: active
       ? {
           completeLabel: markCompleteLabel(count),

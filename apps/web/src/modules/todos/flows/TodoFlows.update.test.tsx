@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { err, ok } from "neverthrow";
-import type { Todo } from "contracts";
+import { err, ok, type Result } from "neverthrow";
+import type { Todo, UpdateBatchResponse } from "contracts";
+import type { UpdateBatchError } from "@/api/todos/todo.api";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useTodos } from "@/modules/todos/hooks/useTodos";
 import { useToggleTodo } from "@/modules/todos/hooks/useToggleTodo";
@@ -186,9 +187,9 @@ describe("TodoFlows: update selected todos", () => {
   });
 
   it("makes the row selection checkboxes inert while the request runs", async () => {
-    let release!: (value: ReturnType<typeof ok>) => void;
+    let release!: (value: Result<UpdateBatchResponse, UpdateBatchError>) => void;
     updateSelected.mockReturnValueOnce(
-      new Promise((resolve) => {
+      new Promise<Result<UpdateBatchResponse, UpdateBatchError>>((resolve) => {
         release = resolve;
       }),
     );

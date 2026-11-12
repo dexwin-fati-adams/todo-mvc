@@ -15,7 +15,7 @@ export function useUpdateSelected() {
   const refreshTodos = () => queryClient.invalidateQueries({ queryKey: ["todos"] });
 
   const mutation = useMutation<UpdateOutcome, Error, UpdateInput>({
-    mutationFn: ({ ids, completed }) => todoApi.updateBatch({ ids, completed }).then((r) => r),
+    mutationFn: async ({ ids, completed }) => todoApi.updateBatch({ ids, completed }),
     onSuccess: (outcome) =>
       outcome.match(
         () => refreshTodos(),

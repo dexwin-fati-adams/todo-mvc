@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { err, ok, type Result } from "neverthrow";
-import type { Status, Todo } from "contracts";
+import type { SetAllCompletedResponse, Status, Todo } from "contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientError, UpdateTodoRequest } from "@/api/todos/todo.api";
 import { useTodos, type TodoServerState } from "@/modules/todos/hooks/useTodos";

@@ -140,7 +140,8 @@ describe("useSelectionFlow: update selected", () => {
 
     await act(async () => result.current.update?.onComplete());
 
-    expect(result.current.locked).toBe(true);
+    expect(result.current.clearDisabled).toBe(true);
+    expect(result.current.selectVisibleDisabled).toBe(true);
     expect(result.current.update?.pending).toBe(true);
     expect(result.current.update?.disabled).toBe(true);
     expect(result.current.isDisabled("c")).toBe(true);
@@ -266,7 +267,7 @@ describe("useSelectionFlow: update selected", () => {
 
     await act(async () => result.current.update?.onComplete());
 
-    expect(result.current.locked).toBe(false);
+    expect(result.current.clearDisabled).toBe(false);
     expect(result.current.update?.pending).toBe(false);
     expect(result.current.update?.failureText).toBe(FAILURE);
     expect(result.current.count).toBe(2);
