@@ -21,6 +21,24 @@ export type SelectionUpdateControls = {
   onActive: () => void;
 };
 
+//The delete button, its two-step confirmation, the pending state and the failure alert.
+export type SelectionDeleteControls = {
+  label: string;
+  disabled: boolean;
+  pending: boolean;
+  confirming: boolean;
+  questionText: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  helpText: string;
+  failureText: string | null;
+  deleteRef?: Ref<HTMLButtonElement>;
+  confirmRef?: Ref<HTMLButtonElement>;
+  onDelete: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
 export type SelectionControlsProps = {
   visible: boolean;
   active: boolean;
@@ -37,6 +55,8 @@ export type SelectionControlsProps = {
   onClear: () => void;
   //The two update buttons, the pending state and the failure alert. Absent means none are drawn.
   update?: SelectionUpdateControls;
+  //M52 PLACEHOLDER: accepted but ignored. Replaced after the red tests are pushed.
+  remove?: SelectionDeleteControls;
 };
 
 // Same look as the page buttons and the Delete button: slate border, small text.
