@@ -19,20 +19,24 @@ export function selectionRowLabel(title: string): string {
 }
 
 export function selectionNoticeText(notice: SelectionNotice): string {
-  return match(notice)
-    .with({ kind: "limit" }, ({ skipped }) =>
-      skipped === 1
-        ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
-        : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
-    )
-    .with(
-      { kind: "scope-cleared" },
-      () => "Selection cleared because the status or search changed.",
-    )
-    .with({ kind: "cleared" }, () => "Selection cleared.")
-    .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
-    .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
-    .exhaustive();
+  return (
+    match(notice)
+      .with({ kind: "limit" }, ({ skipped }) =>
+        skipped === 1
+          ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
+          : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
+      )
+      .with(
+        { kind: "scope-cleared" },
+        () => "Selection cleared because the status or search changed.",
+      )
+      .with({ kind: "cleared" }, () => "Selection cleared.")
+      .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
+      .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
+      // M52 PLACEHOLDER: replaced after the red tests are pushed.
+      .with({ kind: "deleted" }, { kind: "delete-conflict" }, () => "")
+      .exhaustive()
+  );
 }
 
 // The count comes first. At the limit it says so. A notice, if there is one, comes last.
@@ -79,3 +83,23 @@ function conflictSentence(removed: number): string {
     ? "Nothing was changed. 1 selected todo no longer exists and was removed from the selection."
     : `Nothing was changed. ${removed} selected todos no longer exist and were removed from the selection.`;
 }
+
+// ---- Delete selected todos (M52 PLACEHOLDERS: empty, replaced after the red tests are pushed) ----
+export const DELETE_FAILURE_TEXT = "";
+export const DELETE_HELP_TEXT = "";
+export const CANCEL_DELETE_LABEL = "";
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
+export function deleteLabel(_count: number): string {
+  return "";
+}
+export function deleteQuestionText(_count: number): string {
+  return "";
+}
+export function confirmDeleteLabel(_count: number): string {
+  return "";
+}
+export function deletingText(_count: number): string {
+  return "";
+}
+/* eslint-enable @typescript-eslint/no-unused-vars */

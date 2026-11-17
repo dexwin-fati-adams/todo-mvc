@@ -8,7 +8,9 @@ export type SelectionNotice =
   | { kind: "scope-cleared" }
   | { kind: "cleared" }
   | { kind: "updated"; count: number; completed: boolean }
-  | { kind: "conflict"; removed: number };
+  | { kind: "conflict"; removed: number }
+  | { kind: "deleted"; count: number }
+  | { kind: "delete-conflict"; removed: number };
 
 export type SelectionState =
   | { mode: "off" }
@@ -28,7 +30,9 @@ export type SelectionAction =
   | { type: "scopeChanged"; scopeKey: string }
   | { type: "removed"; id: string }
   | { type: "updated"; count: number; completed: boolean }
-  | { type: "conflict"; missingIds: readonly string[] };
+  | { type: "conflict"; missingIds: readonly string[] }
+  | { type: "deleted"; count: number }
+  | { type: "deleteConflict"; missingIds: readonly string[] };
 
 type SelectionOn = Extract<SelectionState, { mode: "on" }>;
 
@@ -133,6 +137,8 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           { type: "removed" },
           { type: "updated" },
           { type: "conflict" },
+          { type: "deleted" },
+          { type: "deleteConflict" },
           () => off,
         )
         .exhaustive(),
@@ -150,6 +156,8 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           applyUpdated(current, count, completed),
         )
         .with({ type: "conflict" }, ({ missingIds }) => applyConflict(current, missingIds))
+        // M52 PLACEHOLDER: replaced after the red tests are pushed.
+        .with({ type: "deleted" }, { type: "deleteConflict" }, () => current)
         .exhaustive(),
     )
     .exhaustive();
