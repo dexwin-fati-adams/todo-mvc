@@ -115,6 +115,23 @@ function applyConflict(state: SelectionOn, missingIds: readonly string[]): Selec
   return { ...state, selected: remaining, notice: { kind: "conflict", removed } };
 }
 
+//A finished delete empties the selection and keeps the mode on. The notice carries the server's count.
+function applyDeleted(state: SelectionOn, count: number): SelectionOn {
+  return { ...state, selected: [], notice: { kind: "deleted", count } };
+}
+
+//A delete conflict removes only the ids that are both selected and named as missing. The rest keep their order.
+//If none of the named ids is selected, nothing changes and the same state comes back.
+function applyDeleteConflict(state: SelectionOn, missingIds: readonly string[]): SelectionOn {
+  const missing = new Set(missingIds);
+  const remaining = state.selected.filter((id) => !missing.has(id));
+  const removed = state.selected.length - remaining.length;
+  if (removed === 0) {
+    return state;
+  }
+  return { ...state, selected: remaining, notice: { kind: "delete-conflict", removed } };
+}
+
 //Every rule for selection mode lives here. It is pure, it never mutates its input,
 // and it returns the same state object when nothing changes. Both matches are exhaustive,
 // so a new state or action that is not handled is a compile error and not a runtime surprise.
@@ -156,8 +173,10 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           applyUpdated(current, count, completed),
         )
         .with({ type: "conflict" }, ({ missingIds }) => applyConflict(current, missingIds))
-        // M52 PLACEHOLDER: replaced after the red tests are pushed.
-        .with({ type: "deleted" }, { type: "deleteConflict" }, () => current)
+        .with({ type: "deleted" }, ({ count }) => applyDeleted(current, count))
+        .with({ type: "deleteConflict" }, ({ missingIds }) =>
+          applyDeleteConflict(current, missingIds),
+        )
         .exhaustive(),
     )
     .exhaustive();
