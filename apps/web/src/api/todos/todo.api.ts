@@ -2,6 +2,8 @@ import { match, P } from "ts-pattern";
 import { err, errAsync, ok, okAsync, ResultAsync, type Result } from "neverthrow";
 import type { z } from "zod";
 import {
+  type DeleteBatchRequest,
+  type DeleteBatchResponse,
   BatchConflictResponseSchema,
   DeleteCompletedResponseSchema,
   ErrorResponseSchema,
@@ -32,6 +34,7 @@ export type ClientError = ApiError | NetworkError | ParseError;
 // It is a separate union so the exhaustive matches on ClientError stay untouched.
 export type BatchConflictError = { type: "BATCH_CONFLICT"; missingIds: string[] };
 export type UpdateBatchError = ClientError | BatchConflictError;
+export type DeleteBatchError = UpdateBatchError;
 
 //UpdateTodoRequest is the body for PATCH /todos/:id. It is taken from the shared schema, so the adapter and the API agree.
 export type UpdateTodoRequest = z.infer<typeof UpdateTodoRequestSchema>;
@@ -165,6 +168,11 @@ export const todoApi = {
   // is no body, so no search or page can go with it. The server answers with { deletedCount }.
   clearCompleted: () =>
     request("/todos?status=completed", DeleteCompletedResponseSchema, { method: "DELETE" }),
+
+  // M52 PLACEHOLDER: sends nothing. Replaced after the red tests are pushed.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  deleteBatch: (_body: DeleteBatchRequest): ResultAsync<DeleteBatchResponse, DeleteBatchError> =>
+    okAsync<DeleteBatchResponse, DeleteBatchError>({ deletedCount: 0 }),
 
   // updateBatch sets completed on exactly the listed todos, all or nothing.
   // The body is checked with the shared contract first, so an invalid request sends nothing.

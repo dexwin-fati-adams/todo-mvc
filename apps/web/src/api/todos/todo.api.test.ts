@@ -969,3 +969,103 @@ describe("todoApi.updateBatch", () => {
     }
   });
 });
+
+describe("todoApi.deleteBatch", () => {
+  const a = "11111111-1111-4111-8111-111111111111";
+  const b = "22222222-2222-4222-8222-222222222222";
+
+  it("sends POST /todos/batch-delete with exactly { ids } as JSON and no query string (16)", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ deletedCount: 2 })));
+
+    await todoApi.deleteBatch({ ids: [a, b] });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ ids: [a, b] });
+    expect((init?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(calledUrl(fetchMock).pathname).toBe("/todos/batch-delete");
+    expect(calledUrl(fetchMock).search).toBe("");
+  });
+
+  it("returns ok({ deletedCount }) for a valid 200 body (17)", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ deletedCount: 2 })));
+
+    const result = await todoApi.deleteBatch({ ids: [a, b] });
+
+    expect(result.isOk()).toBe(true);
+    expect(result._unsafeUnwrap()).toEqual({ deletedCount: 2 });
+  });
+
+  it("returns PARSE_ERROR when a 200 body does not match the schema (17)", async () => {
+    stubFetch(() => Promise.resolve(jsonResponse({ deletedCount: "two" })));
+
+    const result = await todoApi.deleteBatch({ ids: [a] });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+  });
+
+  it("returns BATCH_CONFLICT with the missing ids for a valid 409 body (18)", async () => {
+    stubFetch(() =>
+      Promise.resolve(
+        jsonResponse(
+          { error: "batch_conflict", message: "Nothing was deleted.", missingIds: [b] },
+          409,
+        ),
+      ),
+    );
+
+    const result = await todoApi.deleteBatch({ ids: [a, b] });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toEqual({ type: "BATCH_CONFLICT", missingIds: [b] });
+  });
+
+  it("returns API_ERROR with status 409 when the 409 body is invalid (18)", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "batch_conflict", message: "No ids here" }, 409)),
+    );
+
+    const result = await todoApi.deleteBatch({ ids: [a] });
+
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr()).toMatchObject({ type: "API_ERROR", status: 409 });
+  });
+
+  it("returns typed errors for 400, 503 and a rejected fetch, and never throws (19)", async () => {
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "VALIDATION_ERROR", message: "bad body" }, 400)),
+    );
+    const bad = await todoApi.deleteBatch({ ids: [a] });
+    expect(bad._unsafeUnwrapErr()).toMatchObject({ type: "API_ERROR", status: 400 });
+
+    stubFetch(() =>
+      Promise.resolve(jsonResponse({ error: "SERVICE_UNAVAILABLE", message: "Down" }, 503)),
+    );
+    const down = await todoApi.deleteBatch({ ids: [a] });
+    expect(down._unsafeUnwrapErr()).toMatchObject({ type: "API_ERROR", status: 503 });
+
+    stubFetch(() => Promise.reject(new Error("offline")));
+    const offline = await todoApi.deleteBatch({ ids: [a] });
+    expect(offline._unsafeUnwrapErr().type).toBe("NETWORK_ERROR");
+  });
+
+  it("makes no request and returns PARSE_ERROR for an invalid request (20)", async () => {
+    const fetchMock = stubFetch(() => Promise.resolve(jsonResponse({ deletedCount: 1 })));
+    const tooMany = Array.from(
+      { length: 101 },
+      (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    );
+
+    const empty = await todoApi.deleteBatch({ ids: [] });
+    const duplicates = await todoApi.deleteBatch({ ids: [a, a] });
+    const over = await todoApi.deleteBatch({ ids: tooMany });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    for (const result of [empty, duplicates, over]) {
+      expect(result.isErr()).toBe(true);
+      expect(result._unsafeUnwrapErr().type).toBe("PARSE_ERROR");
+    }
+  });
+});
