@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
 import { match } from "ts-pattern";
-import type { SelectionUpdateControls } from "@/modules/todos/components/SelectionControls";
+import type {
+  SelectionDeleteControls,
+  SelectionUpdateControls,
+} from "@/modules/todos/components/SelectionControls";
 import {
   allSelected,
   initialSelection,
@@ -10,8 +13,13 @@ import {
   type SelectionAction,
 } from "@/modules/todos/flows/selectionReducer";
 import {
+  CANCEL_DELETE_LABEL,
+  DELETE_HELP_TEXT,
   UPDATE_FAILURE_TEXT,
   UPDATE_HELP_TEXT,
+  confirmDeleteLabel,
+  deleteLabel,
+  deleteQuestionText,
   markActiveLabel,
   markCompleteLabel,
   selectionCountText,
@@ -55,6 +63,8 @@ export type SelectionFlow = {
   onRowDeleted: (id: string) => void;
   //The two update buttons, the pending state and the failure alert. Present only while selection mode is on.
   update?: SelectionUpdateControls;
+  //The delete button, the confirmation and the failure alert. Present only while selection mode is on.
+  remove?: SelectionDeleteControls;
 };
 
 //After a press, focus goes to the count line (a plain element with tabIndex -1), to the Select todos button,
@@ -232,6 +242,23 @@ export function useSelectionFlow({
           activeRef,
           onComplete: () => onUpdate(true),
           onActive: () => onUpdate(false),
+        }
+      : undefined,
+    //M52 PLACEHOLDER: inert. Replaced after the red tests are pushed.
+    remove: active
+      ? {
+          label: deleteLabel(count),
+          disabled: true,
+          pending: false,
+          confirming: false,
+          questionText: deleteQuestionText(count),
+          confirmLabel: confirmDeleteLabel(count),
+          cancelLabel: CANCEL_DELETE_LABEL,
+          helpText: DELETE_HELP_TEXT,
+          failureText: null,
+          onDelete: () => undefined,
+          onConfirm: () => undefined,
+          onCancel: () => undefined,
         }
       : undefined,
   };
