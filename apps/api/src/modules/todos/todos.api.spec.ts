@@ -3946,10 +3946,6 @@ test.describe("Delete selected todos (browser)", () => {
     return (await request.get(`/todos/${id}`)).status() === 200;
   }
 
-  async function completedOf(request: APIRequestContext, id: string): Promise<boolean> {
-    return ((await (await request.get(`/todos/${id}`)).json()) as Todo).completed;
-  }
-
   async function seedThree(request: APIRequestContext) {
     const a = await createTodo(request, "Alpha");
     const b = await createTodo(request, "Bravo");
