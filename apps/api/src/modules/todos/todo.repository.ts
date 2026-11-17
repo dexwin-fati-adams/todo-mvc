@@ -1,5 +1,5 @@
 import { and, count, eq, ilike, inArray } from "drizzle-orm";
-import { ResultAsync, err, ok } from "neverthrow";
+import { ResultAsync, err, ok, okAsync } from "neverthrow";
 import { match } from "ts-pattern";
 import type { Status } from "contracts";
 import type { Db } from "@/lib/db.js";
@@ -16,6 +16,10 @@ export interface FindAllResult {
 // ok: every id was found and set. conflict: some ids do not exist and nothing was changed.
 export type BatchResult =
   { kind: "ok"; updatedCount: number } | { kind: "conflict"; missingIds: string[] };
+
+// ok: every id was found and deleted. conflict: some ids do not exist and nothing was deleted.
+export type DeleteBatchResult =
+  { kind: "ok"; deletedCount: number } | { kind: "conflict"; missingIds: string[] };
 
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
@@ -37,6 +41,7 @@ export interface TodoRepository {
   setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError>;
   deleteCompleted(): ResultAsync<number, TodoDbError>;
   updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoDbError>;
+  deleteBatch(ids: string[]): ResultAsync<DeleteBatchResult, TodoDbError>;
 }
 
 //In LIKE and ILIKE, % means "any text", _ means "any one character", and \ is the escape character.
@@ -213,6 +218,11 @@ export function createTodoRepository(db: Db): TodoRepository {
           }
         };
         return ResultAsync.fromPromise(run(), (cause) => TodoErrors.dbError(cause));
+      },
+      // M52 PLACEHOLDER: does nothing. Replaced after the red tests are pushed.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      deleteBatch(_ids: string[]): ResultAsync<DeleteBatchResult, TodoDbError> {
+        return okAsync({ kind: "ok", deletedCount: 0 });
       },
     };
   }

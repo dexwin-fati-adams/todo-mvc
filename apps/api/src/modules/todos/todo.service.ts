@@ -1,3 +1,4 @@
+import type { DeleteBatchResult } from "./todo.repository.js";
 import { err, ok, errAsync } from "neverthrow";
 import type { Result, ResultAsync } from "neverthrow";
 import { match } from "ts-pattern";
@@ -86,6 +87,7 @@ export interface TodoService {
   setAllCompleted(completed: boolean): ResultAsync<number, TodoError>;
   deleteCompleted(): ResultAsync<number, TodoError>;
   updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoError>;
+  deleteBatch(ids: string[]): ResultAsync<DeleteBatchResult, TodoError>;
 }
 
 //This code is using ts-pattern to handle all possible results.
@@ -208,6 +210,11 @@ export function createTodoService(repo: TodoRepository): TodoService {
     // All or nothing: the repository runs one transaction and answers ok or conflict.
     updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoError> {
       return repo.updateBatch(ids, completed);
+    },
+
+    // All or nothing: the repository runs one transaction and answers ok or conflict.
+    deleteBatch(ids: string[]): ResultAsync<DeleteBatchResult, TodoError> {
+      return repo.deleteBatch(ids);
     },
   };
 }

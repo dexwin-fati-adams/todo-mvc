@@ -175,3 +175,13 @@ export const BatchConflictResponseSchema = z.object({
   missingIds: z.array(z.string()),
 });
 export type BatchConflictResponse = z.infer<typeof BatchConflictResponseSchema>;
+
+// M52 PLACEHOLDER: accepts any object. Replaced with the real schema after the red tests are pushed.
+export const DeleteBatchRequestSchema = z.object({}).passthrough();
+export type DeleteBatchRequest = { ids: string[] };
+
+// 200 body: the number of todos that were found and deleted.
+export const DeleteBatchResponseSchema = z.object({
+  deletedCount: z.number().int().min(0),
+});
+export type DeleteBatchResponse = z.infer<typeof DeleteBatchResponseSchema>;

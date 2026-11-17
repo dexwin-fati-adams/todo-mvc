@@ -30,6 +30,7 @@ function makeMockRepository(): TodoRepository {
     setAllCompleted: vi.fn(),
     deleteCompleted: vi.fn(),
     updateBatch: vi.fn(),
+    deleteBatch: vi.fn(),
   };
 }
 
