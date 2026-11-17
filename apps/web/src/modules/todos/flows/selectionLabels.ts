@@ -19,24 +19,22 @@ export function selectionRowLabel(title: string): string {
 }
 
 export function selectionNoticeText(notice: SelectionNotice): string {
-  return (
-    match(notice)
-      .with({ kind: "limit" }, ({ skipped }) =>
-        skipped === 1
-          ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
-          : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
-      )
-      .with(
-        { kind: "scope-cleared" },
-        () => "Selection cleared because the status or search changed.",
-      )
-      .with({ kind: "cleared" }, () => "Selection cleared.")
-      .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
-      .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
-      // M52 PLACEHOLDER: replaced after the red tests are pushed.
-      .with({ kind: "deleted" }, { kind: "delete-conflict" }, () => "")
-      .exhaustive()
-  );
+  return match(notice)
+    .with({ kind: "limit" }, ({ skipped }) =>
+      skipped === 1
+        ? `You can select up to ${SELECTION_LIMIT} todos. 1 todo was not selected.`
+        : `You can select up to ${SELECTION_LIMIT} todos. ${skipped} todos were not selected.`,
+    )
+    .with(
+      { kind: "scope-cleared" },
+      () => "Selection cleared because the status or search changed.",
+    )
+    .with({ kind: "cleared" }, () => "Selection cleared.")
+    .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
+    .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
+    .with({ kind: "deleted" }, ({ count }) => deletedSentence(count))
+    .with({ kind: "delete-conflict" }, ({ removed }) => deleteConflictSentence(removed))
+    .exhaustive();
 }
 
 // The count comes first. At the limit it says so. A notice, if there is one, comes last.
@@ -84,22 +82,33 @@ function conflictSentence(removed: number): string {
     : `Nothing was changed. ${removed} selected todos no longer exist and were removed from the selection.`;
 }
 
-// ---- Delete selected todos (M52 PLACEHOLDERS: empty, replaced after the red tests are pushed) ----
-export const DELETE_FAILURE_TEXT = "";
-export const DELETE_HELP_TEXT = "";
-export const CANCEL_DELETE_LABEL = "";
+// ---- Delete selected todos ----
+export const DELETE_FAILURE_TEXT = "Could not delete the selected todos. Please try again.";
+export const DELETE_HELP_TEXT = "Deleting cannot be undone.";
+export const CANCEL_DELETE_LABEL = "Cancel";
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-export function deleteLabel(_count: number): string {
-  return "";
+export function deleteLabel(count: number): string {
+  return `Delete ${count} selected ${todoWord(count)}`;
 }
-export function deleteQuestionText(_count: number): string {
-  return "";
+
+export function deleteQuestionText(count: number): string {
+  return `Delete ${count} selected ${todoWord(count)}? This cannot be undone.`;
 }
-export function confirmDeleteLabel(_count: number): string {
-  return "";
+
+export function confirmDeleteLabel(count: number): string {
+  return `Yes, delete ${count} ${todoWord(count)}`;
 }
-export function deletingText(_count: number): string {
-  return "";
+
+export function deletingText(count: number): string {
+  return `Deleting ${count} selected ${todoWord(count)}…`;
 }
-/* eslint-enable @typescript-eslint/no-unused-vars */
+
+function deletedSentence(count: number): string {
+  return `Deleted ${count} selected ${todoWord(count)}.`;
+}
+
+function deleteConflictSentence(removed: number): string {
+  return removed === 1
+    ? "Nothing was deleted. 1 selected todo no longer exists and was removed from the selection."
+    : `Nothing was deleted. ${removed} selected todos no longer exist and were removed from the selection.`;
+}
