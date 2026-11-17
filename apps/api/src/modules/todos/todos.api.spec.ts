@@ -4149,8 +4149,8 @@ test.describe("Delete selected todos (browser)", () => {
 
     await expect(statusOf(page)).toHaveText("Deleting 2 selected todos…");
     await expect(toolbarOf(page)).toHaveAttribute("aria-busy", "true");
-    await expect(confirmBtn(page, 2)).toBeDisabled();
-    await expect(cancelBtn(page)).toBeDisabled();
+    await expect(confirmBtn(page, 2)).toHaveCount(0);
+    await expect(cancelBtn(page)).toHaveCount(0);
     await expect(page.getByRole("button", { name: /as complete$/ })).toBeDisabled();
     await expect(boxOf(page, "Charlie")).toHaveAttribute("aria-disabled", "true");
     expect(seen).toBe(1);
