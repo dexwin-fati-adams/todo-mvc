@@ -720,3 +720,61 @@ describe("updateBatch", () => {
     expect(rollback).not.toHaveBeenCalled();
   });
 });
+
+// ─── deleteBatch ──────────────────────────────────────────────────────────────
+
+function makeDeleteDb(options: { returned?: Array<{ id: string }>; failure?: Error }) {
+  const returning = options.failure
+    ? vi.fn().mockRejectedValue(options.failure)
+    : vi.fn().mockResolvedValue(options.returned ?? []);
+  const where = vi.fn().mockReturnValue({ returning });
+  const del = vi.fn().mockReturnValue({ where });
+  const rollback = vi.fn(() => {
+    throw new Error("rollback");
+  });
+  const trx = { delete: del, rollback };
+  const transaction = vi.fn(async (callback: (t: typeof trx) => Promise<unknown>) => callback(trx));
+  return { db: { transaction } as unknown as Db, del, rollback, transaction };
+}
+
+describe("deleteBatch", () => {
+  const a = "00000000-0000-0000-0000-00000000000a";
+  const b = "00000000-0000-0000-0000-00000000000b";
+  const c = "00000000-0000-0000-0000-00000000000c";
+
+  it("runs inside one transaction (15)", async () => {
+    const { db, del, transaction } = makeDeleteDb({ returned: [{ id: a }, { id: b }] });
+    await createTodoRepository(db).deleteBatch([a, b]);
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(del).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns ok with the number of rows found when every id exists (15)", async () => {
+    const { db, rollback } = makeDeleteDb({ returned: [{ id: a }, { id: b }, { id: c }] });
+    const result = await createTodoRepository(db).deleteBatch([a, b, c]);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "ok", deletedCount: 3 });
+    expect(rollback).not.toHaveBeenCalled();
+  });
+
+  it("rolls back and returns conflict with the missing ids in request order (15)", async () => {
+    const { db, rollback } = makeDeleteDb({ returned: [{ id: b }] });
+    const result = await createTodoRepository(db).deleteBatch([a, b, c]);
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "conflict", missingIds: [a, c] });
+  });
+
+  it("returns conflict with every id when none exist (15)", async () => {
+    const { db, rollback } = makeDeleteDb({ returned: [] });
+    const result = await createTodoRepository(db).deleteBatch([a, b]);
+    expect(rollback).toHaveBeenCalledTimes(1);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "conflict", missingIds: [a, b] });
+  });
+
+  it("returns TODO_DB_ERROR as a value when the query fails and does not roll back (15)", async () => {
+    const { db, rollback } = makeDeleteDb({ failure: new Error("connection lost") });
+    const result = await createTodoRepository(db).deleteBatch([a]);
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
+    expect(rollback).not.toHaveBeenCalled();
+  });
+});

@@ -723,3 +723,46 @@ describe("updateBatch", () => {
     }
   });
 });
+
+// ─── deleteBatch ──────────────────────────────────────────────────────────────
+
+describe("deleteBatch", () => {
+  let repo: TodoRepository;
+  const ids = [
+    "00000000-0000-0000-0000-00000000000a",
+    "00000000-0000-0000-0000-00000000000b",
+    "00000000-0000-0000-0000-00000000000c",
+  ];
+
+  beforeEach(() => {
+    repo = makeMockRepository();
+  });
+
+  it("returns ok with deletedCount when every id exists (14)", async () => {
+    vi.mocked(repo.deleteBatch).mockReturnValue(okAsync({ kind: "ok", deletedCount: 3 }));
+    const result = await createTodoService(repo).deleteBatch(ids);
+    expect(vi.mocked(repo.deleteBatch)).toHaveBeenCalledWith(ids);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "ok", deletedCount: 3 });
+  });
+
+  it("returns conflict with exactly the missing ids (14)", async () => {
+    vi.mocked(repo.deleteBatch).mockReturnValue(
+      okAsync({ kind: "conflict", missingIds: [ids[0]!, ids[2]!] }),
+    );
+    const result = await createTodoService(repo).deleteBatch(ids);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "conflict", missingIds: [ids[0], ids[2]] });
+  });
+
+  it("returns conflict with all ids when all are missing (14)", async () => {
+    vi.mocked(repo.deleteBatch).mockReturnValue(okAsync({ kind: "conflict", missingIds: ids }));
+    const result = await createTodoService(repo).deleteBatch(ids);
+    expect(result._unsafeUnwrap()).toEqual({ kind: "conflict", missingIds: ids });
+  });
+
+  it("passes a database failure on as TODO_DB_ERROR and never throws (14)", async () => {
+    vi.mocked(repo.deleteBatch).mockReturnValue(errAsync(TodoErrors.dbError(new Error("db down"))));
+    const result = await createTodoService(repo).deleteBatch(ids);
+    expect(result.isErr()).toBe(true);
+    expect(result._unsafeUnwrapErr().type).toBe("TODO_DB_ERROR");
+  });
+});
