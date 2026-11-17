@@ -61,6 +61,9 @@ export type SelectionFlow = {
 //or back to the update button that was pressed.
 type FocusPlan = "count" | "entry" | "complete" | "active";
 
+//Which batch operation is running or last failed. One lock is shared by every batch operation.
+type BatchKind = "update";
+
 //useSelectionFlow owns the reducer, the scope tracking, the focus rule, the batch update and the numbers the view needs.
 export function useSelectionFlow({
   scopeKey,
@@ -77,16 +80,18 @@ export function useSelectionFlow({
   const { update: sendUpdate } = useUpdateSelected();
 
   //The ref is the guard (it changes at once, even before React renders). The state only draws the pending look.
+  //It is shared by every batch operation, so only one runs at a time.
   const pendingRef = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [pendingKind, setPendingKind] = useState<BatchKind | null>(null);
+  const [failure, setFailure] = useState<BatchKind | null>(null);
+  const pending = pendingKind !== null;
 
   //Same pattern as useClearCompletedFlow: remember the last scope and, only when it changes, dispatch during render.
   //React then renders again before anything is drawn, so no frame ever shows the old selection under a new scope.
   const [seenScope, setSeenScope] = useState(scopeKey);
   if (seenScope !== scopeKey) {
     setSeenScope(scopeKey);
-    setFailed(false);
+    setFailure(null);
     dispatch({ type: "scopeChanged", scopeKey });
   }
 
@@ -147,16 +152,16 @@ export function useSelectionFlow({
             })
             .with({ type: "API_ERROR" }, { type: "NETWORK_ERROR" }, { type: "PARSE_ERROR" }, () => {
               focusPlan.current = button;
-              setFailed(true);
+              setFailure("update");
             })
             .exhaustive(),
       );
     } catch {
       focusPlan.current = button;
-      setFailed(true);
+      setFailure("update");
     } finally {
       pendingRef.current = false;
-      setPending(false);
+      setPendingKind(null);
     }
   }
 
@@ -165,8 +170,8 @@ export function useSelectionFlow({
       return;
     }
     pendingRef.current = true;
-    setPending(true);
-    setFailed(false);
+    setPendingKind("update");
+    setFailure(null);
     void runUpdate(state.selected, completed);
   }
 
@@ -175,6 +180,11 @@ export function useSelectionFlow({
   const atLimit = isAtLimit(state);
   const notice = state.mode === "on" ? state.notice : null;
 
+  const pendingText = match(pendingKind)
+    .with("update", () => updatingText(count))
+    .with(null, () => null)
+    .exhaustive();
+
   return {
     //While the mode is on the toolbar always shows. While it is off the entry button needs rows, or a loading list.
     visible: active || loading || visibleIds.length > 0,
@@ -182,7 +192,7 @@ export function useSelectionFlow({
     entryDisabled: loading,
     count,
     atLimit,
-    countText: active ? (pending ? updatingText(count) : selectionCountText(count, notice)) : "",
+    countText: active ? (pendingText ?? selectionCountText(count, notice)) : "",
     selectVisibleLabel: buildSelectVisibleLabel(visibleIds.length),
     selectVisibleDisabled:
       pending || visibleIds.length === 0 || allSelected(visibleIds, state) || atLimit,
@@ -194,11 +204,11 @@ export function useSelectionFlow({
     entryRef,
     countRef,
     onEnter: () => {
-      setFailed(false);
+      setFailure(null);
       press({ type: "enter", scopeKey }, "count");
     },
     onExit: () => {
-      setFailed(false);
+      setFailure(null);
       press({ type: "exit" }, "entry");
     },
     onToggle: (id) => {
@@ -206,7 +216,7 @@ export function useSelectionFlow({
     },
     onSelectVisible: () => press({ type: "selectVisible", ids: visibleIds }, "count"),
     onClear: () => {
-      setFailed(false);
+      setFailure(null);
       press({ type: "clear" }, "count");
     },
     onRowDeleted: (id) => dispatch({ type: "removed", id }),
@@ -215,8 +225,8 @@ export function useSelectionFlow({
           completeLabel: markCompleteLabel(count),
           activeLabel: markActiveLabel(count),
           disabled: pending || count === 0,
-          pending,
-          failureText: failed ? UPDATE_FAILURE_TEXT : null,
+          pending: pendingKind === "update",
+          failureText: failure === "update" ? UPDATE_FAILURE_TEXT : null,
           helpText: UPDATE_HELP_TEXT,
           completeRef,
           activeRef,
