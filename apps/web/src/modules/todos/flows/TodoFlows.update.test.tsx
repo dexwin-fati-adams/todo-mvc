@@ -28,6 +28,11 @@ vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
   useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
 }));
 
+const { deleteSelected } = vi.hoisted(() => ({ deleteSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useDeleteSelected", () => ({
+  useDeleteSelected: () => ({ remove: deleteSelected, refresh: vi.fn() }),
+}));
+
 type HookResult = ReturnType<typeof useTodos>;
 
 const make = (n: number, completed = false): Todo => ({
