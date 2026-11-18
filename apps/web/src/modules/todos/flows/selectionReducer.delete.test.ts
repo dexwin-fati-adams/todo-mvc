@@ -53,14 +53,34 @@ describe("selectionReducer: deleteConflict", () => {
   });
 
   // 29
-  it("returns the same state when no missing id is selected", () => {
-    const state = on(["a", "b"]);
-    expect(selectionReducer(state, { type: "deleteConflict", missingIds: ["x"] })).toBe(state);
-  });
 
   it("returns the same state while selection mode is off", () => {
     const off: SelectionState = { mode: "off" };
     expect(selectionReducer(off, { type: "deleted", count: 2 })).toBe(off);
     expect(selectionReducer(off, { type: "deleteConflict", missingIds: ["a"] })).toBe(off);
+  });
+});
+
+describe("selectionReducer: deleteConflict after the scope changed (review 2)", () => {
+  it("still reports the conflict when none of the missing ids is selected", () => {
+    const state = { mode: "on" as const, scopeKey: "all|", selected: ["a"], notice: null };
+    const next = selectionReducer(state, { type: "deleteConflict", missingIds: ["x", "y"] });
+    expect(next).toEqual({
+      mode: "on",
+      scopeKey: "all|",
+      selected: ["a"],
+      notice: { kind: "delete-conflict", removed: 2 },
+    });
+  });
+
+  it("reports it when the selection is already empty", () => {
+    const state = { mode: "on" as const, scopeKey: "all|", selected: [] as string[], notice: null };
+    const next = selectionReducer(state, { type: "deleteConflict", missingIds: ["x"] });
+    expect(next).toMatchObject({ selected: [], notice: { kind: "delete-conflict", removed: 1 } });
+  });
+
+  it("returns the same state when the server named no missing ids", () => {
+    const state = { mode: "on" as const, scopeKey: "all|", selected: ["a"], notice: null };
+    expect(selectionReducer(state, { type: "deleteConflict", missingIds: [] })).toBe(state);
   });
 });
