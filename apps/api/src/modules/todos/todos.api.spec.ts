@@ -3923,6 +3923,442 @@ test.describe("Update selected todos (browser)", () => {
   });
 });
 
+test.describe("Delete selected todos (browser)", () => {
+  const WEB = "http://localhost:4000";
+  const toolbarOf = (page: Page) => page.getByRole("group", { name: "Selection mode" });
+  const statusOf = (page: Page) => toolbarOf(page).getByRole("status");
+  const boxOf = (page: Page, title: string) =>
+    page.getByRole("checkbox", { name: `Select “${title}”` });
+  const word = (n: number) => (n === 1 ? "todo" : "todos");
+  const delBtn = (page: Page, n: number) =>
+    page.getByRole("button", { name: `Delete ${n} selected ${word(n)}`, exact: true });
+  const confirmBtn = (page: Page, n: number) =>
+    page.getByRole("button", { name: `Yes, delete ${n} ${word(n)}`, exact: true });
+  const cancelBtn = (page: Page) => page.getByRole("button", { name: "Cancel", exact: true });
+  const markComplete = (page: Page, n: number) =>
+    page.getByRole("button", { name: `Mark ${n} selected ${word(n)} as complete`, exact: true });
+  const markActive = (page: Page, n: number) =>
+    page.getByRole("button", { name: `Mark ${n} selected ${word(n)} as active`, exact: true });
+  const failureAlert = (page: Page) =>
+    page.getByRole("alert").filter({ hasText: "Could not delete the selected todos" });
+
+  async function existsOf(request: APIRequestContext, id: string): Promise<boolean> {
+    return (await request.get(`/todos/${id}`)).status() === 200;
+  }
+
+  async function seedThree(request: APIRequestContext) {
+    const a = await createTodo(request, "Alpha");
+    const b = await createTodo(request, "Bravo");
+    const c = await createTodo(request, "Charlie");
+    return { a, b, c };
+  }
+
+  async function seedBulk(count: number) {
+    await db.execute(sql`
+      INSERT INTO todos (id, title, completed, created_at)
+      SELECT gen_random_uuid()::text, 'Bulk ' || lpad(g::text, 3, '0'), false,
+             now() + (g || ' seconds')::interval
+      FROM generate_series(1, ${count}) AS g
+    `);
+  }
+
+  async function remaining(): Promise<number> {
+    const res = await db.execute(sql`SELECT count(*)::int AS n FROM todos`);
+    return (res.rows[0] as { n: number }).n;
+  }
+
+  async function openAndSelect(page: Page, titles: string[]) {
+    await page.goto(WEB);
+    await page.getByRole("button", { name: "Select todos" }).click();
+    for (const title of titles) await boxOf(page, title).check();
+  }
+
+  // 61
+  test("API: POST /todos/batch-delete returns exactly { deletedCount } and deletes the listed todos", async ({
+    request,
+  }) => {
+    const { a, b, c } = await seedThree(request);
+    const res = await request.post("/todos/batch-delete", { data: { ids: [a.id, b.id] } });
+    expect(res.status()).toBe(200);
+    expect(await res.json()).toEqual({ deletedCount: 2 });
+    expect(await existsOf(request, a.id)).toBe(false);
+    expect(await existsOf(request, b.id)).toBe(false);
+    expect(await existsOf(request, c.id)).toBe(true);
+  });
+
+  // 62
+  test("API: invalid bodies return 400 VALIDATION_ERROR and delete nothing", async ({
+    request,
+  }) => {
+    const { a } = await seedThree(request);
+    const bodies: unknown[] = [
+      { ids: [] },
+      { ids: [a.id, a.id] },
+      { ids: ["nope"] },
+      { ids: a.id },
+      {},
+      { ids: [a.id], completed: true },
+    ];
+    for (const data of bodies) {
+      const res = await request.post("/todos/batch-delete", { data: data as object });
+      expect(res.status()).toBe(400);
+      expect(((await res.json()) as ErrorResponse).error).toBe("VALIDATION_ERROR");
+    }
+    expect(await existsOf(request, a.id)).toBe(true);
+  });
+
+  // 63
+  test("API: a missing id returns 409 batch_conflict and deletes nothing", async ({ request }) => {
+    const { a } = await seedThree(request);
+    const res = await request.post("/todos/batch-delete", {
+      data: { ids: [a.id, NONEXISTENT_ID] },
+    });
+    expect(res.status()).toBe(409);
+    const body = (await res.json()) as { error: string; missingIds: string[] };
+    expect(body.error).toBe("batch_conflict");
+    expect(body.missingIds).toEqual([NONEXISTENT_ID]);
+    expect(await existsOf(request, a.id)).toBe(true);
+  });
+
+  // 64
+  test("the delete button shows in selection mode and is disabled with nothing selected", async ({
+    page,
+    request,
+  }) => {
+    await seedThree(request);
+    await openAndSelect(page, []);
+
+    await expect(page.getByRole("button", { name: /^Delete 0 selected/ })).toBeDisabled();
+    await expect(page.getByText("Deleting cannot be undone.")).toBeVisible();
+  });
+
+  // 65
+  test("delete then Cancel sends no request and keeps the rows", async ({ page, request }) => {
+    const { a } = await seedThree(request);
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST") posts.push(r.url());
+    });
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+
+    await delBtn(page, 2).click();
+    await expect(page.getByText("Delete 2 selected todos? This cannot be undone.")).toBeVisible();
+    await cancelBtn(page).click();
+
+    await expect(confirmBtn(page, 2)).toHaveCount(0);
+    await expect(delBtn(page, 2)).toBeFocused();
+    expect(posts).toEqual([]);
+    expect(await existsOf(request, a.id)).toBe(true);
+    await expect(boxOf(page, "Alpha")).toBeChecked();
+  });
+
+  // 66
+  test("confirming sends one request with the exact body, removes the rows, and clears the selection", async ({
+    page,
+    request,
+  }) => {
+    const { a, b, c } = await seedThree(request);
+    const writes: string[] = [];
+    const bodies: unknown[] = [];
+    page.on("request", (r) => {
+      if (r.method() !== "GET") writes.push(`${r.method()} ${new URL(r.url()).pathname}`);
+      if (r.method() === "POST" && r.url().endsWith("/todos/batch-delete")) {
+        bodies.push(r.postDataJSON());
+      }
+    });
+    await openAndSelect(page, ["Alpha", "Bravo", "Charlie"]);
+
+    await delBtn(page, 3).click();
+    await confirmBtn(page, 3).click();
+
+    await expect(statusOf(page)).toHaveText("0 of 100 selected. Deleted 3 selected todos.");
+    expect(bodies).toEqual([{ ids: [a.id, b.id, c.id] }]);
+    expect(writes).toEqual(["POST /todos/batch-delete"]);
+    for (const todo of [a, b, c]) expect(await existsOf(request, todo.id)).toBe(false);
+    await expect(page.getByRole("checkbox", { name: /^Select “/ })).toHaveCount(0);
+  });
+
+  // 67
+  test("a selection across two pages sends one request with ids from both pages", async ({
+    page,
+  }) => {
+    await seedBulk(25);
+    const bodies: { ids: string[] }[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().endsWith("/todos/batch-delete")) {
+        bodies.push(r.postDataJSON() as { ids: string[] });
+      }
+    });
+    await openAndSelect(page, ["Bulk 001"]);
+    await page.getByRole("button", { name: "Next page" }).click();
+    await boxOf(page, "Bulk 021").check();
+    await expect(statusOf(page)).toHaveText("2 of 100 selected");
+
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+
+    await expect(statusOf(page)).toContainText("Deleted 2 selected todos.");
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]!.ids).toHaveLength(2);
+    expect(await remaining()).toBe(23);
+  });
+
+  // 68
+  test("with 120 todos and page size 100, selecting a page of 100 deletes exactly 100", async ({
+    page,
+  }) => {
+    await seedBulk(120);
+    let sent = 0;
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().endsWith("/todos/batch-delete")) sent += 1;
+    });
+    await page.goto(WEB);
+    await page.getByRole("combobox", { name: "Todos per page" }).selectOption("100");
+    await page.getByRole("button", { name: "Select todos" }).click();
+    await page.getByRole("button", { name: "Select all 100 todos on this page" }).click();
+    await expect(statusOf(page)).toHaveText("100 of 100 selected. Limit reached.");
+
+    await delBtn(page, 100).click();
+    await confirmBtn(page, 100).click();
+
+    await expect(statusOf(page)).toContainText("Deleted 100 selected todos.");
+    expect(sent).toBe(1);
+    expect(await remaining()).toBe(20);
+  });
+
+  // 69
+  test("while the response is held the buttons are disabled, the pending text shows, the selection is locked, and no second request is sent", async ({
+    page,
+    request,
+  }) => {
+    const { a, c } = await seedThree(request);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let seen = 0;
+    await page.route("**/todos/batch-delete", async (route) => {
+      seen += 1;
+      await gate;
+      await route.continue();
+    });
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+
+    await expect(statusOf(page)).toHaveText("Deleting 2 selected todos…");
+    await expect(toolbarOf(page)).toHaveAttribute("aria-busy", "true");
+    await expect(confirmBtn(page, 2)).toHaveCount(0);
+    await expect(cancelBtn(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /as complete$/ })).toBeDisabled();
+    await expect(boxOf(page, "Charlie")).toHaveAttribute("aria-disabled", "true");
+    expect(seen).toBe(1);
+
+    release();
+    await expect(statusOf(page)).toContainText("Deleted 2 selected todos.");
+    expect(seen).toBe(1);
+    expect(await existsOf(request, a.id)).toBe(false);
+    expect(await existsOf(request, c.id)).toBe(true);
+  });
+
+  // 70
+  test("a 503 shows the safe alert with no server text, keeps the rows and selection, and a retry works", async ({
+    page,
+    request,
+  }) => {
+    const { a, b } = await seedThree(request);
+    await page.route("**/todos/batch-delete", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "SERVICE_UNAVAILABLE",
+          message: "Database error, please retry",
+        }),
+      }),
+    );
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+
+    await expect(failureAlert(page)).toHaveText(
+      "Could not delete the selected todos. Please try again.",
+    );
+    await expect(failureAlert(page)).not.toContainText(/503|Database/);
+    await expect(boxOf(page, "Alpha")).toBeChecked();
+    await expect(boxOf(page, "Bravo")).toBeChecked();
+    expect(await existsOf(request, a.id)).toBe(true);
+
+    await page.unroute("**/todos/batch-delete");
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+
+    await expect(statusOf(page)).toContainText("Deleted 2 selected todos.");
+    expect(await existsOf(request, b.id)).toBe(false);
+  });
+
+  // 71
+  test("a todo deleted after it was selected is removed by the 409, nothing else is deleted, and a retry deletes the rest", async ({
+    page,
+    request,
+  }) => {
+    const { a, b, c } = await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo", "Charlie"]);
+    expect((await request.delete(`/todos/${b.id}`)).status()).toBe(204);
+
+    await delBtn(page, 3).click();
+    await confirmBtn(page, 3).click();
+
+    await expect(statusOf(page)).toContainText(
+      "Nothing was deleted. 1 selected todo no longer exists and was removed from the selection.",
+    );
+    expect(await existsOf(request, a.id)).toBe(true);
+    expect(await existsOf(request, c.id)).toBe(true);
+    await expect(boxOf(page, "Bravo")).toHaveCount(0);
+    await expect(boxOf(page, "Alpha")).toBeChecked();
+
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+
+    await expect(statusOf(page)).toContainText("Deleted 2 selected todos.");
+    expect(await existsOf(request, a.id)).toBe(false);
+    expect(await existsOf(request, c.id)).toBe(false);
+  });
+
+  // 72
+  test("when every selected todo was deleted first, the selection is empty and the buttons are disabled", async ({
+    page,
+    request,
+  }) => {
+    const { a, b } = await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+    await request.delete(`/todos/${a.id}`);
+    await request.delete(`/todos/${b.id}`);
+
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+
+    await expect(statusOf(page)).toContainText(
+      "Nothing was deleted. 2 selected todos no longer exist",
+    );
+    await expect(page.getByRole("button", { name: /^Delete 0 selected/ })).toBeDisabled();
+  });
+
+  // 73
+  test("deleting the only row of the last page recovers to a valid page", async ({ page }) => {
+    await seedBulk(21);
+    await page.goto(WEB);
+    await page.getByRole("button", { name: "Next page" }).click();
+    await page.getByRole("button", { name: "Select todos" }).click();
+    await boxOf(page, "Bulk 021").check();
+
+    await delBtn(page, 1).click();
+    await confirmBtn(page, 1).click();
+
+    await expect(page.getByText("Page 2 does not exist. Showing page 1.")).toBeVisible();
+    await expect(boxOf(page, "Bulk 001")).toBeVisible();
+    expect(await remaining()).toBe(20);
+  });
+
+  // 74
+  test("keyboard: Tab to Delete, Enter, then Enter on the confirm button; focus ends on the count line", async ({
+    page,
+    request,
+  }) => {
+    await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo"]);
+    const button = delBtn(page, 2);
+    for (
+      let i = 0;
+      i < 40 && !(await button.evaluate((el) => el === document.activeElement));
+      i++
+    ) {
+      await page.keyboard.press("Tab");
+    }
+    await expect(button).toBeFocused();
+
+    await page.keyboard.press("Enter");
+    await expect(confirmBtn(page, 2)).toBeFocused();
+    await page.keyboard.press("Enter");
+
+    await expect(statusOf(page)).toContainText("Deleted 2 selected todos.");
+    await expect(statusOf(page)).toBeFocused();
+  });
+
+  // 75
+  test("the delete and confirm buttons have their full names", async ({ page, request }) => {
+    await seedThree(request);
+    await openAndSelect(page, ["Alpha", "Bravo", "Charlie"]);
+
+    await expect(delBtn(page, 3)).toBeVisible();
+    await delBtn(page, 3).click();
+    await expect(confirmBtn(page, 3)).toBeVisible();
+    await expect(cancelBtn(page)).toBeVisible();
+  });
+
+  // 76
+  test("after a reload the server shows the saved state", async ({ page, request }) => {
+    const { a } = await seedThree(request);
+    await openAndSelect(page, ["Alpha"]);
+    await delBtn(page, 1).click();
+    await confirmBtn(page, 1).click();
+    await expect(statusOf(page)).toContainText("Deleted 1 selected todo.");
+
+    await page.reload();
+
+    expect(await existsOf(request, a.id)).toBe(false);
+    await expect(page.getByRole("checkbox", { name: "Select “Alpha”" })).toHaveCount(0);
+  });
+
+  // 77: the advanced capability gate
+  test("gate: select across two pages, complete, activate, delete, and recover from a stale selection", async ({
+    page,
+    request,
+  }) => {
+    await seedBulk(25);
+    await page.goto(WEB);
+    await page.getByRole("button", { name: "Select todos" }).click();
+
+    // complete a selection that spans two pages
+    await boxOf(page, "Bulk 001").check();
+    await page.getByRole("button", { name: "Next page" }).click();
+    await boxOf(page, "Bulk 021").check();
+    await markComplete(page, 2).click();
+    await expect(statusOf(page)).toContainText("Marked 2 selected todos as complete.");
+    const done = await db.execute(sql`SELECT count(*)::int AS n FROM todos WHERE completed = true`);
+    expect((done.rows[0] as { n: number }).n).toBe(2);
+
+    // activate the same two
+    await boxOf(page, "Bulk 021").check();
+    await page.getByRole("button", { name: "Previous page" }).click();
+    await boxOf(page, "Bulk 001").check();
+    await markActive(page, 2).click();
+    await expect(statusOf(page)).toContainText("Marked 2 selected todos as active.");
+    const left = await db.execute(sql`SELECT count(*)::int AS n FROM todos WHERE completed = true`);
+    expect((left.rows[0] as { n: number }).n).toBe(0);
+
+    // stale selection: one selected todo is deleted elsewhere first
+    await boxOf(page, "Bulk 001").check();
+    await boxOf(page, "Bulk 002").check();
+    const stale = await db.execute(sql`SELECT id FROM todos WHERE title = 'Bulk 002'`);
+    const staleId = (stale.rows[0] as { id: string }).id;
+    expect((await request.delete(`/todos/${staleId}`)).status()).toBe(204);
+    await delBtn(page, 2).click();
+    await confirmBtn(page, 2).click();
+    await expect(statusOf(page)).toContainText(
+      "Nothing was deleted. 1 selected todo no longer exists",
+    );
+
+    // delete the remaining selection
+    await delBtn(page, 1).click();
+    await confirmBtn(page, 1).click();
+    await expect(statusOf(page)).toContainText("Deleted 1 selected todo.");
+    expect(await remaining()).toBe(23);
+  });
+});
+
 let closed = false;
 test.afterAll(async () => {
   if (closed) return;

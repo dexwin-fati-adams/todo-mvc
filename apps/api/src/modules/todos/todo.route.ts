@@ -12,6 +12,8 @@ import {
   TodoListResponseSchema,
   TodoSchema,
   UpdateBatchRequestSchema,
+  DeleteBatchRequestSchema,
+  DeleteBatchResponseSchema,
   UpdateBatchResponseSchema,
   UpdateTodoRequestSchema,
 } from "contracts";
@@ -245,6 +247,48 @@ export async function todoRoutes(fastify: FastifyInstance, deps: TodoDeps) {
             const conflict: BatchConflictResponse = {
               error: "batch_conflict",
               message: `Nothing was changed. ${missingIds.length} selected todo(s) no longer exist.`,
+              missingIds,
+            };
+            return reply.status(409).send(conflict);
+          })
+          .exhaustive(),
+      )
+      .with({ ok: false }, ({ error }) => {
+        const { status, body: errorBody } = toHttpError(error);
+        return reply.status(status).send(errorBody);
+      })
+      .exhaustive();
+  });
+
+  // POST /todos/batch-delete: delete exactly the listed todos, all or nothing.
+  // 400 for a body that breaks the contract, 409 batch_conflict (nothing deleted) when
+  // any id does not exist.
+  fastify.post("/todos/batch-delete", {}, async (request, reply) => {
+    const body = DeleteBatchRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply
+        .status(400)
+        .send({ error: "VALIDATION_ERROR", message: formatZodIssues(body.error.issues) });
+    }
+
+    const result = await todoService.deleteBatch(body.data.ids);
+    return match(toMatchable(result))
+      .with({ ok: true }, ({ value }) =>
+        match(value)
+          .with({ kind: "ok" }, ({ deletedCount }) =>
+            sendValidated({
+              schema: DeleteBatchResponseSchema,
+              body: { deletedCount },
+              status: 200,
+              reply,
+              request,
+              context: "todos/delete-batch/200",
+            }),
+          )
+          .with({ kind: "conflict" }, ({ missingIds }) => {
+            const conflict: BatchConflictResponse = {
+              error: "batch_conflict",
+              message: `Nothing was deleted. ${missingIds.length} selected todo(s) no longer exist.`,
               missingIds,
             };
             return reply.status(409).send(conflict);

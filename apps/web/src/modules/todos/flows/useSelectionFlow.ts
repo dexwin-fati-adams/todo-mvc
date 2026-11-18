@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useReducer, useRef, useState, type RefObject } from "react";
 import { match } from "ts-pattern";
-import type { SelectionUpdateControls } from "@/modules/todos/components/SelectionControls";
+import type {
+  SelectionDeleteControls,
+  SelectionUpdateControls,
+} from "@/modules/todos/components/SelectionControls";
 import {
   allSelected,
   initialSelection,
@@ -10,8 +13,15 @@ import {
   type SelectionAction,
 } from "@/modules/todos/flows/selectionReducer";
 import {
+  CANCEL_DELETE_LABEL,
+  DELETE_FAILURE_TEXT,
+  DELETE_HELP_TEXT,
   UPDATE_FAILURE_TEXT,
   UPDATE_HELP_TEXT,
+  confirmDeleteLabel,
+  deleteLabel,
+  deleteQuestionText,
+  deletingText,
   markActiveLabel,
   markCompleteLabel,
   selectionCountText,
@@ -19,6 +29,7 @@ import {
   updatingText,
 } from "@/modules/todos/flows/selectionLabels";
 import { focusIsLost } from "@/modules/todos/flows/focusIsLost";
+import { useDeleteSelected } from "@/modules/todos/hooks/useDeleteSelected";
 import { useUpdateSelected } from "@/modules/todos/hooks/useUpdateSelected";
 
 export type UseSelectionFlowParams = {
@@ -55,11 +66,16 @@ export type SelectionFlow = {
   onRowDeleted: (id: string) => void;
   //The two update buttons, the pending state and the failure alert. Present only while selection mode is on.
   update?: SelectionUpdateControls;
+  //The delete button, the confirmation and the failure alert. Present only while selection mode is on.
+  remove?: SelectionDeleteControls;
 };
 
 //After a press, focus goes to the count line (a plain element with tabIndex -1), to the Select todos button,
 //or back to the update button that was pressed.
-type FocusPlan = "count" | "entry" | "complete" | "active";
+type FocusPlan = "count" | "entry" | "complete" | "active" | "delete" | "confirm";
+
+//Which batch operation is running or last failed. One lock is shared by every batch operation.
+type BatchKind = "update" | "delete";
 
 //useSelectionFlow owns the reducer, the scope tracking, the focus rule, the batch update and the numbers the view needs.
 export function useSelectionFlow({
@@ -73,20 +89,33 @@ export function useSelectionFlow({
   const countRef = useRef<HTMLParagraphElement>(null);
   const completeRef = useRef<HTMLButtonElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
   const focusPlan = useRef<FocusPlan | null>(null);
   const { update: sendUpdate } = useUpdateSelected();
+  const { remove: sendDelete } = useDeleteSelected();
 
   //The ref is the guard (it changes at once, even before React renders). The state only draws the pending look.
+  //It is shared by every batch operation, so only one runs at a time.
   const pendingRef = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [pendingKind, setPendingKind] = useState<BatchKind | null>(null);
+  const [failure, setFailure] = useState<BatchKind | null>(null);
+  const pending = pendingKind !== null;
+
+  //The confirmation is open only for the exact selection array it was opened for.
+  //Any change to the selection makes a new array, so the confirmation closes by itself.
+  //Confirm and Cancel clear it too, so a failed request does not reopen it.
+  const [confirmingFor, setConfirmingFor] = useState<readonly string[] | null>(null);
+  const confirming =
+    state.mode === "on" && confirmingFor !== null && state.selected === confirmingFor && !pending;
 
   //Same pattern as useClearCompletedFlow: remember the last scope and, only when it changes, dispatch during render.
   //React then renders again before anything is drawn, so no frame ever shows the old selection under a new scope.
   const [seenScope, setSeenScope] = useState(scopeKey);
   if (seenScope !== scopeKey) {
     setSeenScope(scopeKey);
-    setFailed(false);
+    setFailure(null);
+    setConfirmingFor(null);
     dispatch({ type: "scopeChanged", scopeKey });
   }
 
@@ -97,7 +126,7 @@ export function useSelectionFlow({
       return;
     }
     focusPlan.current = null;
-    if (!focusIsLost()) {
+    if (plan !== "confirm" && !focusIsLost()) {
       return;
     }
     const target = match(plan)
@@ -105,6 +134,8 @@ export function useSelectionFlow({
       .with("entry", () => entryRef.current ?? focusFallbackRef?.current ?? null)
       .with("complete", () => completeRef.current)
       .with("active", () => activeRef.current)
+      .with("delete", () => deleteRef.current)
+      .with("confirm", () => confirmRef.current)
       .exhaustive();
     target?.focus();
   });
@@ -147,16 +178,16 @@ export function useSelectionFlow({
             })
             .with({ type: "API_ERROR" }, { type: "NETWORK_ERROR" }, { type: "PARSE_ERROR" }, () => {
               focusPlan.current = button;
-              setFailed(true);
+              setFailure("update");
             })
             .exhaustive(),
       );
     } catch {
       focusPlan.current = button;
-      setFailed(true);
+      setFailure("update");
     } finally {
       pendingRef.current = false;
-      setPending(false);
+      setPendingKind(null);
     }
   }
 
@@ -165,15 +196,85 @@ export function useSelectionFlow({
       return;
     }
     pendingRef.current = true;
-    setPending(true);
-    setFailed(false);
+    setPendingKind("update");
+    setFailure(null);
+    setConfirmingFor(null);
     void runUpdate(state.selected, completed);
+  }
+
+  //Sends the selected ids once. Success clears the selection, a conflict removes the missing ids,
+  //any other failure keeps the selection and shows the safe message. Nothing here throws.
+  async function runDelete(ids: readonly string[]) {
+    try {
+      const outcome = await sendDelete([...ids]);
+      outcome.match(
+        ({ deletedCount }) => {
+          focusPlan.current = "count";
+          dispatch({ type: "deleted", count: deletedCount });
+        },
+        (error) =>
+          match(error)
+            .with({ type: "BATCH_CONFLICT" }, ({ missingIds }) => {
+              const left = ids.filter((id) => !missingIds.includes(id)).length;
+              focusPlan.current = left === 0 ? "count" : "delete";
+              dispatch({ type: "deleteConflict", missingIds });
+            })
+            .with({ type: "API_ERROR" }, { type: "NETWORK_ERROR" }, { type: "PARSE_ERROR" }, () => {
+              focusPlan.current = "delete";
+              setFailure("delete");
+            })
+            .exhaustive(),
+      );
+    } catch {
+      focusPlan.current = "delete";
+      setFailure("delete");
+    } finally {
+      pendingRef.current = false;
+      setPendingKind(null);
+    }
+  }
+
+  //The first press only opens the confirmation. Nothing is sent.
+  function onDelete() {
+    if (pendingRef.current || state.mode !== "on" || state.selected.length === 0) {
+      return;
+    }
+    if (confirming) {
+      return;
+    }
+    focusPlan.current = "confirm";
+    setConfirmingFor(state.selected);
+  }
+
+  function onConfirmDelete() {
+    if (pendingRef.current || !confirming || state.mode !== "on") {
+      return;
+    }
+    pendingRef.current = true;
+    setPendingKind("delete");
+    setFailure(null);
+    setConfirmingFor(null);
+    void runDelete(state.selected);
+  }
+
+  function onCancelDelete() {
+    if (pendingRef.current || confirmingFor === null) {
+      return;
+    }
+    focusPlan.current = "delete";
+    setConfirmingFor(null);
   }
 
   const active = state.mode === "on";
   const count = selectedCount(state);
   const atLimit = isAtLimit(state);
   const notice = state.mode === "on" ? state.notice : null;
+
+  const pendingText = match(pendingKind)
+    .with("update", () => updatingText(count))
+    .with("delete", () => deletingText(count))
+    .with(null, () => null)
+    .exhaustive();
 
   return {
     //While the mode is on the toolbar always shows. While it is off the entry button needs rows, or a loading list.
@@ -182,7 +283,7 @@ export function useSelectionFlow({
     entryDisabled: loading,
     count,
     atLimit,
-    countText: active ? (pending ? updatingText(count) : selectionCountText(count, notice)) : "",
+    countText: active ? (pendingText ?? selectionCountText(count, notice)) : "",
     selectVisibleLabel: buildSelectVisibleLabel(visibleIds.length),
     selectVisibleDisabled:
       pending || visibleIds.length === 0 || allSelected(visibleIds, state) || atLimit,
@@ -194,11 +295,13 @@ export function useSelectionFlow({
     entryRef,
     countRef,
     onEnter: () => {
-      setFailed(false);
+      setFailure(null);
+      setConfirmingFor(null);
       press({ type: "enter", scopeKey }, "count");
     },
     onExit: () => {
-      setFailed(false);
+      setFailure(null);
+      setConfirmingFor(null);
       press({ type: "exit" }, "entry");
     },
     onToggle: (id) => {
@@ -206,7 +309,8 @@ export function useSelectionFlow({
     },
     onSelectVisible: () => press({ type: "selectVisible", ids: visibleIds }, "count"),
     onClear: () => {
-      setFailed(false);
+      setFailure(null);
+      setConfirmingFor(null);
       press({ type: "clear" }, "count");
     },
     onRowDeleted: (id) => dispatch({ type: "removed", id }),
@@ -215,13 +319,31 @@ export function useSelectionFlow({
           completeLabel: markCompleteLabel(count),
           activeLabel: markActiveLabel(count),
           disabled: pending || count === 0,
-          pending,
-          failureText: failed ? UPDATE_FAILURE_TEXT : null,
+          pending: pendingKind === "update",
+          failureText: failure === "update" ? UPDATE_FAILURE_TEXT : null,
           helpText: UPDATE_HELP_TEXT,
           completeRef,
           activeRef,
           onComplete: () => onUpdate(true),
           onActive: () => onUpdate(false),
+        }
+      : undefined,
+    remove: active
+      ? {
+          label: deleteLabel(count),
+          disabled: pending || count === 0,
+          pending: pendingKind === "delete",
+          confirming,
+          questionText: deleteQuestionText(count),
+          confirmLabel: confirmDeleteLabel(count),
+          cancelLabel: CANCEL_DELETE_LABEL,
+          helpText: DELETE_HELP_TEXT,
+          failureText: failure === "delete" ? DELETE_FAILURE_TEXT : null,
+          deleteRef,
+          confirmRef,
+          onDelete,
+          onConfirm: onConfirmDelete,
+          onCancel: onCancelDelete,
         }
       : undefined,
   };
