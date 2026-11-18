@@ -239,6 +239,9 @@ export function useSelectionFlow({
     if (pendingRef.current || state.mode !== "on" || state.selected.length === 0) {
       return;
     }
+    if (confirming) {
+      return;
+    }
     focusPlan.current = "confirm";
     setConfirmingFor(state.selected);
   }
