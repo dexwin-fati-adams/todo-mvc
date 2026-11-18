@@ -1323,6 +1323,22 @@ describe("POST /todos/batch-delete — delete selected todos (real app, real dat
     expect(toggle.statusCode).toBe(204);
   });
 
+  it("an existing id sent in upper case is deleted, not reported missing (review 3)", async () => {
+    const ids = await createMany(2);
+    const res = await postDelete({ ids: [ids[0]!.toUpperCase()] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deletedCount: 1 });
+    expect(await statusOf(ids)).toEqual([404, 200]);
+  });
+
+  it("the same id in upper and lower case counts as a duplicate (review 3)", async () => {
+    const ids = await createMany(1);
+    const res = await postDelete({ ids: [ids[0], ids[0]!.toUpperCase()] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(await statusOf(ids)).toEqual([200]);
+  });
+
   it("error bodies never contain a stack trace or SQL (13)", async () => {
     const ids = await createMany(1);
     const bodies = [
