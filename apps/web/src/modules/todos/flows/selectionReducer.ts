@@ -121,15 +121,21 @@ function applyDeleted(state: SelectionOn, count: number): SelectionOn {
 }
 
 //A delete conflict removes only the ids that are both selected and named as missing. The rest keep their order.
-//If none of the named ids is selected, nothing changes and the same state comes back.
+//The notice counts the selected ids that were removed. If none is selected any more (the status or
+//search changed while the request ran), it counts the missing ids the server named, so the user is still told.
+//Only when the server named no missing id does the same state come back.
 function applyDeleteConflict(state: SelectionOn, missingIds: readonly string[]): SelectionOn {
   const missing = new Set(missingIds);
-  const remaining = state.selected.filter((id) => !missing.has(id));
-  const removed = state.selected.length - remaining.length;
-  if (removed === 0) {
+  if (missing.size === 0) {
     return state;
   }
-  return { ...state, selected: remaining, notice: { kind: "delete-conflict", removed } };
+  const remaining = state.selected.filter((id) => !missing.has(id));
+  const removed = state.selected.length - remaining.length;
+  return {
+    ...state,
+    selected: remaining,
+    notice: { kind: "delete-conflict", removed: removed > 0 ? removed : missing.size },
+  };
 }
 
 //Every rule for selection mode lives here. It is pure, it never mutates its input,
