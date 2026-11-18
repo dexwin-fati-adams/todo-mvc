@@ -180,7 +180,12 @@ export type BatchConflictResponse = z.infer<typeof BatchConflictResponseSchema>;
 export const DeleteBatchRequestSchema = z
   .object({
     ids: z
-      .array(z.string().uuid())
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((id) => id.toLowerCase()),
+      )
       .min(1, "ids must contain at least one id")
       .max(BATCH_MAX_IDS, `ids must contain at most ${BATCH_MAX_IDS} ids`)
       .refine((ids) => new Set(ids).size === ids.length, { message: "ids must be unique" }),
