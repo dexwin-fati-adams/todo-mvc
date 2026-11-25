@@ -17,6 +17,10 @@ export interface FindAllResult {
 export type BatchResult =
   { kind: "ok"; updatedCount: number } | { kind: "conflict"; missingIds: string[] };
 
+// ok: every id was found and deleted. conflict: some ids do not exist and nothing was deleted.
+export type DeleteBatchResult =
+  { kind: "ok"; deletedCount: number } | { kind: "conflict"; missingIds: string[] };
+
 export interface TodoRepository {
   withTransaction(tx: Db): TodoRepository;
   findAll(
@@ -37,6 +41,7 @@ export interface TodoRepository {
   setAllCompleted(completed: boolean): ResultAsync<number, TodoDbError>;
   deleteCompleted(): ResultAsync<number, TodoDbError>;
   updateBatch(ids: string[], completed: boolean): ResultAsync<BatchResult, TodoDbError>;
+  deleteBatch(ids: string[]): ResultAsync<DeleteBatchResult, TodoDbError>;
 }
 
 //In LIKE and ILIKE, % means "any text", _ means "any one character", and \ is the escape character.
@@ -204,6 +209,35 @@ export function createTodoRepository(db: Db): TodoRepository {
                 return trx.rollback();
               }
               return { kind: "ok", updatedCount: rows.length };
+            });
+          } catch (cause) {
+            if (missingIds.length > 0) {
+              return { kind: "conflict", missingIds };
+            }
+            throw cause;
+          }
+        };
+        return ResultAsync.fromPromise(run(), (cause) => TodoErrors.dbError(cause));
+      },
+      // One transaction: DELETE ... WHERE id IN (...) RETURNING id. If any requested id
+      // was not returned, it does not exist, so the whole transaction is rolled back and
+      // the missing ids come back as a conflict value (in request order).
+      deleteBatch(ids: string[]): ResultAsync<DeleteBatchResult, TodoDbError> {
+        const run = async (): Promise<DeleteBatchResult> => {
+          let missingIds: string[] = [];
+          try {
+            return await tx.transaction(async (trx): Promise<DeleteBatchResult> => {
+              const rows = await trx
+                .delete(todosTable)
+                .where(inArray(todosTable.id, ids))
+                .returning({ id: todosTable.id });
+              const found = new Set(rows.map((row) => row.id));
+              const missing = ids.filter((id) => !found.has(id));
+              if (missing.length > 0) {
+                missingIds = missing;
+                return trx.rollback();
+              }
+              return { kind: "ok", deletedCount: rows.length };
             });
           } catch (cause) {
             if (missingIds.length > 0) {

@@ -14,6 +14,11 @@ vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
   useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
 }));
 
+const { deleteSelected } = vi.hoisted(() => ({ deleteSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useDeleteSelected", () => ({
+  useDeleteSelected: () => ({ remove: deleteSelected, refresh: vi.fn() }),
+}));
+
 const ALL = JSON.stringify(["all", null]);
 const ACTIVE = JSON.stringify(["active", null]);
 

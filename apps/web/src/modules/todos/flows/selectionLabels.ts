@@ -32,6 +32,8 @@ export function selectionNoticeText(notice: SelectionNotice): string {
     .with({ kind: "cleared" }, () => "Selection cleared.")
     .with({ kind: "updated" }, ({ count, completed }) => updatedSentence(count, completed))
     .with({ kind: "conflict" }, ({ removed }) => conflictSentence(removed))
+    .with({ kind: "deleted" }, ({ count }) => deletedSentence(count))
+    .with({ kind: "delete-conflict" }, ({ removed }) => deleteConflictSentence(removed))
     .exhaustive();
 }
 
@@ -78,4 +80,35 @@ function conflictSentence(removed: number): string {
   return removed === 1
     ? "Nothing was changed. 1 selected todo no longer exists and was removed from the selection."
     : `Nothing was changed. ${removed} selected todos no longer exist and were removed from the selection.`;
+}
+
+// ---- Delete selected todos ----
+export const DELETE_FAILURE_TEXT = "Could not delete the selected todos. Please try again.";
+export const DELETE_HELP_TEXT = "Deleting cannot be undone.";
+export const CANCEL_DELETE_LABEL = "Cancel";
+
+export function deleteLabel(count: number): string {
+  return `Delete ${count} selected ${todoWord(count)}`;
+}
+
+export function deleteQuestionText(count: number): string {
+  return `Delete ${count} selected ${todoWord(count)}? This cannot be undone.`;
+}
+
+export function confirmDeleteLabel(count: number): string {
+  return `Yes, delete ${count} ${todoWord(count)}`;
+}
+
+export function deletingText(count: number): string {
+  return `Deleting ${count} selected ${todoWord(count)}…`;
+}
+
+function deletedSentence(count: number): string {
+  return `Deleted ${count} selected ${todoWord(count)}.`;
+}
+
+function deleteConflictSentence(removed: number): string {
+  return removed === 1
+    ? "Nothing was deleted. 1 selected todo no longer exists and was removed from the selection."
+    : `Nothing was deleted. ${removed} selected todos no longer exist and were removed from the selection.`;
 }

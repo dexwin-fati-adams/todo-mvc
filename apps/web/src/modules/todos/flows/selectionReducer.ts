@@ -8,7 +8,9 @@ export type SelectionNotice =
   | { kind: "scope-cleared" }
   | { kind: "cleared" }
   | { kind: "updated"; count: number; completed: boolean }
-  | { kind: "conflict"; removed: number };
+  | { kind: "conflict"; removed: number }
+  | { kind: "deleted"; count: number }
+  | { kind: "delete-conflict"; removed: number };
 
 export type SelectionState =
   | { mode: "off" }
@@ -28,7 +30,9 @@ export type SelectionAction =
   | { type: "scopeChanged"; scopeKey: string }
   | { type: "removed"; id: string }
   | { type: "updated"; count: number; completed: boolean }
-  | { type: "conflict"; missingIds: readonly string[] };
+  | { type: "conflict"; missingIds: readonly string[] }
+  | { type: "deleted"; count: number }
+  | { type: "deleteConflict"; missingIds: readonly string[] };
 
 type SelectionOn = Extract<SelectionState, { mode: "on" }>;
 
@@ -111,6 +115,29 @@ function applyConflict(state: SelectionOn, missingIds: readonly string[]): Selec
   return { ...state, selected: remaining, notice: { kind: "conflict", removed } };
 }
 
+//A finished delete empties the selection and keeps the mode on. The notice carries the server's count.
+function applyDeleted(state: SelectionOn, count: number): SelectionOn {
+  return { ...state, selected: [], notice: { kind: "deleted", count } };
+}
+
+//A delete conflict removes only the ids that are both selected and named as missing. The rest keep their order.
+//The notice counts the selected ids that were removed. If none is selected any more (the status or
+//search changed while the request ran), it counts the missing ids the server named, so the user is still told.
+//Only when the server named no missing id does the same state come back.
+function applyDeleteConflict(state: SelectionOn, missingIds: readonly string[]): SelectionOn {
+  const missing = new Set(missingIds);
+  if (missing.size === 0) {
+    return state;
+  }
+  const remaining = state.selected.filter((id) => !missing.has(id));
+  const removed = state.selected.length - remaining.length;
+  return {
+    ...state,
+    selected: remaining,
+    notice: { kind: "delete-conflict", removed: removed > 0 ? removed : missing.size },
+  };
+}
+
 //Every rule for selection mode lives here. It is pure, it never mutates its input,
 // and it returns the same state object when nothing changes. Both matches are exhaustive,
 // so a new state or action that is not handled is a compile error and not a runtime surprise.
@@ -133,6 +160,8 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           { type: "removed" },
           { type: "updated" },
           { type: "conflict" },
+          { type: "deleted" },
+          { type: "deleteConflict" },
           () => off,
         )
         .exhaustive(),
@@ -150,6 +179,10 @@ export function selectionReducer(state: SelectionState, action: SelectionAction)
           applyUpdated(current, count, completed),
         )
         .with({ type: "conflict" }, ({ missingIds }) => applyConflict(current, missingIds))
+        .with({ type: "deleted" }, ({ count }) => applyDeleted(current, count))
+        .with({ type: "deleteConflict" }, ({ missingIds }) =>
+          applyDeleteConflict(current, missingIds),
+        )
         .exhaustive(),
     )
     .exhaustive();

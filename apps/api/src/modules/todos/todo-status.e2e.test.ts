@@ -1145,3 +1145,208 @@ describe("PATCH /todos/batch — update selected todos (real app, real database)
 afterAll(async () => {
   await db.$client.end();
 });
+
+describe("POST /todos/batch-delete — delete selected todos (real app, real database)", () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    const { buildApp } = await import("@/app.js");
+    app = await buildApp();
+    await app.ready();
+    await clearAllTodos();
+  });
+
+  afterEach(async () => {
+    await clearAllTodos();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  async function createMany(count: number): Promise<string[]> {
+    const ids: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/todos",
+        payload: { title: `Todo ${i + 1}` },
+      });
+      expect(res.statusCode).toBe(201);
+      ids.push(res.json().id as string);
+    }
+    return ids;
+  }
+
+  async function statusOf(ids: string[]): Promise<number[]> {
+    const result: number[] = [];
+    for (const id of ids) {
+      const res = await app.inject({ method: "GET", url: `/todos/${id}` });
+      result.push(res.statusCode);
+    }
+    return result;
+  }
+
+  function postDelete(payload: unknown) {
+    return app.inject({ method: "POST", url: "/todos/batch-delete", payload: payload as object });
+  }
+
+  it("deletes only the listed todos and returns deletedCount (1)", async () => {
+    const ids = await createMany(5);
+    const res = await postDelete({ ids: [ids[1], ids[3]] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deletedCount: 2 });
+    expect(await statusOf(ids)).toEqual([200, 404, 200, 404, 200]);
+  });
+
+  it("leaves other todos untouched and keeps list counts correct (2)", async () => {
+    const ids = await createMany(5);
+    const res = await postDelete({ ids: [ids[0], ids[1]] });
+    expect(res.statusCode).toBe(200);
+    const list = await app.inject({ method: "GET", url: "/todos" });
+    expect(list.json().activeCount).toBe(3);
+    expect(list.json().completedCount).toBe(0);
+  });
+
+  it("works with one id (3)", async () => {
+    const ids = await createMany(2);
+    const res = await postDelete({ ids: [ids[0]] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deletedCount: 1 });
+    expect(await statusOf(ids)).toEqual([404, 200]);
+  });
+
+  it("works with exactly 100 ids (4)", async () => {
+    const ids = await createMany(100);
+    const res = await postDelete({ ids });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deletedCount: 100 });
+    const list = await app.inject({ method: "GET", url: "/todos" });
+    expect(list.json().activeCount).toBe(0);
+  }, 60_000);
+
+  describe("validation returns 400 VALIDATION_ERROR and deletes nothing (5)", () => {
+    const cases: Array<[string, (a: string) => unknown]> = [
+      ["empty ids", () => ({ ids: [] })],
+      ["duplicate ids", (a) => ({ ids: [a, a] })],
+      ["an invalid id", (a) => ({ ids: [a, "not-a-uuid"] })],
+      ["101 ids", () => ({ ids: Array.from({ length: 101 }, () => randomUUID()) })],
+      ["a missing ids", () => ({})],
+      ["an unknown field", (a) => ({ ids: [a], extra: true })],
+      ["a non-array ids", (a) => ({ ids: a })],
+    ];
+
+    it.each(cases)("%s", async (_name, build) => {
+      const ids = await createMany(2);
+      const res = await postDelete(build(ids[0]!));
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe("VALIDATION_ERROR");
+      expect(await statusOf(ids)).toEqual([200, 200]);
+    });
+  });
+
+  it("an empty body and unreadable JSON return 400 and delete nothing (6)", async () => {
+    const ids = await createMany(1);
+    const empty = await app.inject({ method: "POST", url: "/todos/batch-delete" });
+    expect(empty.statusCode).toBe(400);
+    const broken = await app.inject({
+      method: "POST",
+      url: "/todos/batch-delete",
+      headers: { "content-type": "application/json" },
+      payload: "{not json",
+    });
+    expect(broken.statusCode).toBe(400);
+    expect(await statusOf(ids)).toEqual([200]);
+  });
+
+  it("one missing id returns 409 batch_conflict and keeps every existing todo (7)", async () => {
+    const ids = await createMany(3);
+    const missing = randomUUID();
+    const res = await postDelete({ ids: [ids[0], missing, ids[1]] });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("batch_conflict");
+    expect(res.json().missingIds).toEqual([missing]);
+    expect(await statusOf(ids)).toEqual([200, 200, 200]);
+  });
+
+  it("all ids missing returns 409 (8)", async () => {
+    const a = randomUUID();
+    const b = randomUUID();
+    const res = await postDelete({ ids: [a, b] });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().missingIds).toEqual([a, b]);
+  });
+
+  it("the 409 lists only the missing ids, in request order (9)", async () => {
+    const ids = await createMany(2);
+    const m1 = randomUUID();
+    const m2 = randomUUID();
+    const res = await postDelete({ ids: [m1, ids[0], m2, ids[1]] });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().missingIds).toEqual([m1, m2]);
+  });
+
+  it("a todo deleted just before the request is a conflict (10)", async () => {
+    const ids = await createMany(2);
+    const first = await app.inject({ method: "DELETE", url: `/todos/${ids[0]}` });
+    expect(first.statusCode).toBeLessThan(300);
+    const res = await postDelete({ ids });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().missingIds).toEqual([ids[0]]);
+    expect(await statusOf(ids)).toEqual([404, 200]);
+  });
+
+  it("a second identical request after success returns 409 (11)", async () => {
+    const ids = await createMany(2);
+    const first = await postDelete({ ids });
+    expect(first.statusCode).toBe(200);
+    const second = await postDelete({ ids });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().missingIds).toEqual(ids);
+  });
+
+  it("existing routes are unchanged (12)", async () => {
+    const ids = await createMany(4);
+    const single = await app.inject({ method: "DELETE", url: `/todos/${ids[0]}` });
+    expect(single.statusCode).toBeLessThan(300);
+    expect(await statusOf([ids[0]!])).toEqual([404]);
+    const batch = await app.inject({
+      method: "PATCH",
+      url: "/todos/batch",
+      payload: { ids: [ids[1]], completed: true },
+    });
+    expect(batch.statusCode).toBe(200);
+    const completed = await app.inject({ method: "DELETE", url: "/todos?status=completed" });
+    expect(completed.statusCode).toBeLessThan(300);
+    expect(await statusOf([ids[1]!])).toEqual([404]);
+    const toggle = await app.inject({ method: "POST", url: "/todos/toggle-all" });
+    expect(toggle.statusCode).toBe(204);
+  });
+
+  it("an existing id sent in upper case is deleted, not reported missing (review 3)", async () => {
+    const ids = await createMany(2);
+    const res = await postDelete({ ids: [ids[0]!.toUpperCase()] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ deletedCount: 1 });
+    expect(await statusOf(ids)).toEqual([404, 200]);
+  });
+
+  it("the same id in upper and lower case counts as a duplicate (review 3)", async () => {
+    const ids = await createMany(1);
+    const res = await postDelete({ ids: [ids[0], ids[0]!.toUpperCase()] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("VALIDATION_ERROR");
+    expect(await statusOf(ids)).toEqual([200]);
+  });
+
+  it("error bodies never contain a stack trace or SQL (13)", async () => {
+    const ids = await createMany(1);
+    const bodies = [
+      (await postDelete({ ids: [] })).body,
+      (await postDelete({ ids: [ids[0], randomUUID()] })).body,
+    ];
+    for (const body of bodies) {
+      expect(body).not.toMatch(/\bat \S+ \(|node_modules|"stack"|select |delete from|insert into/i);
+    }
+  });
+});

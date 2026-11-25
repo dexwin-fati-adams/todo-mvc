@@ -16,6 +16,11 @@ vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
   useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
 }));
 
+const { deleteSelected } = vi.hoisted(() => ({ deleteSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useDeleteSelected", () => ({
+  useDeleteSelected: () => ({ remove: deleteSelected, refresh: vi.fn() }),
+}));
+
 type Outcome = Result<UpdateBatchResponse, UpdateBatchError>;
 
 const ALL = JSON.stringify(["all", null]);

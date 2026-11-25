@@ -17,6 +17,11 @@ vi.mock("@/modules/todos/hooks/useUpdateSelected", () => ({
   useUpdateSelected: () => ({ update: updateSelected, refresh: vi.fn() }),
 }));
 
+const { deleteSelected } = vi.hoisted(() => ({ deleteSelected: vi.fn() }));
+vi.mock("@/modules/todos/hooks/useDeleteSelected", () => ({
+  useDeleteSelected: () => ({ remove: deleteSelected, refresh: vi.fn() }),
+}));
+
 vi.mock("@/modules/todos/hooks/useTodos");
 vi.mock("@/modules/todos/hooks/useToggleTodo");
 vi.mock("@/modules/todos/hooks/useDeleteTodo");

@@ -175,3 +175,26 @@ export const BatchConflictResponseSchema = z.object({
   missingIds: z.array(z.string()),
 });
 export type BatchConflictResponse = z.infer<typeof BatchConflictResponseSchema>;
+
+// POST /todos/batch-delete: 1 to BATCH_MAX_IDS unique UUIDs. .strict() rejects any other field.
+export const DeleteBatchRequestSchema = z
+  .object({
+    ids: z
+      .array(
+        z
+          .string()
+          .uuid()
+          .transform((id) => id.toLowerCase()),
+      )
+      .min(1, "ids must contain at least one id")
+      .max(BATCH_MAX_IDS, `ids must contain at most ${BATCH_MAX_IDS} ids`)
+      .refine((ids) => new Set(ids).size === ids.length, { message: "ids must be unique" }),
+  })
+  .strict();
+export type DeleteBatchRequest = z.infer<typeof DeleteBatchRequestSchema>;
+
+// 200 body: the number of todos that were found and deleted.
+export const DeleteBatchResponseSchema = z.object({
+  deletedCount: z.number().int().min(0),
+});
+export type DeleteBatchResponse = z.infer<typeof DeleteBatchResponseSchema>;
